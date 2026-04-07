@@ -38,6 +38,11 @@ export type JobOpeningFilters = {
   order?: "asc" | "desc";
 };
 
+export type PaginatedJobOpeningsResult = {
+  items: JobOpeningListItem[];
+  total: number;
+};
+
 export async function listJobOpenings(filters?: JobOpeningFilters): Promise<JobOpeningListItem[]> {
   const supabase = await createClient();
   let query = supabase
@@ -126,3 +131,56 @@ export async function listOpenJobOpenings(): Promise<OpenJobListItem[]> {
     };
   });
 }
+
+export async function listJobOpeningsPaginated(
+  filters: JobOpeningFilters,
+  page: number,
+  pageSize: number
+): Promise<PaginatedJobOpeningsResult> {
+  const supabase = await createClient();
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from("job_openings")
+    .select("id, job_title, role_type, employment_type, status, created_at, departments(department_name)", { count: "exact" })
+    .order(filters.sort === "title" ? "job_title" : "created_at", { ascending: filters.order === "asc" })
+    .range(from, to);
+
+  if (filters.status) {
+    query = query.eq("status", filters.status);
+  }
+  if (filters.roleType) {
+    query = query.eq("role_type", filters.roleType);
+  }
+  if (filters.departmentId) {
+    query = query.eq("department_id", filters.departmentId);
+  }
+  if (filters.q) {
+    query = query.ilike("job_title", `%${filters.q}%`);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const items = (data ?? []).map((item) => {
+    const department = Array.isArray(item.departments) ? item.departments[0] : item.departments;
+    return {
+      id: item.id,
+      job_title: item.job_title,
+      role_type: item.role_type,
+      employment_type: item.employment_type,
+      status: item.status,
+      created_at: item.created_at,
+      department_name: department?.department_name ?? null
+    };
+  });
+
+  return { items, total: count ?? 0 };
+}
+
+
+

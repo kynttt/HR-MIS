@@ -6,6 +6,7 @@ import { ApplicationDocumentUploadForm } from "@/features/applications/applicati
 import { ApplicationNoteForm } from "@/features/applications/application-note-form";
 import { ApplicationStatusForm } from "@/features/applications/application-status-form";
 import { ConvertToEmployeeForm } from "@/features/applications/convert-to-employee-form";
+import { ApplicationDocumentRemoveButton } from "@/features/applications/application-document-remove-button";
 import { getApplicationDetails } from "@/features/applications/service";
 import { listDepartments } from "@/features/departments/service";
 
@@ -71,7 +72,36 @@ export default async function ApplicationDetailsPage({ params }: Props) {
                 {application.documents.length === 0 ? <li className="text-[#64748d]">No documents uploaded yet.</li> : null}
                 {application.documents.map((document) => (
                   <li key={document.id} className="rounded border border-[#e5edf5] p-2">
-                    {document.document_type} - {document.original_file_name ?? document.file_path}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium capitalize">{document.document_type}</p>
+                        <p className="truncate text-xs text-[#64748d]">{document.original_file_name ?? document.file_path}</p>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <a
+                          href={document.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs font-medium text-[#533afd] hover:underline"
+                        >
+                          View
+                        </a>
+                        <ApplicationDocumentRemoveButton
+                          applicationId={application.id}
+                          documentId={document.id}
+                          fileName={document.original_file_name ?? document.document_type}
+                        />
+                      </div>
+                    </div>
+                    {document.is_image ? (
+                      <a href={document.file_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block max-w-full">
+                        <img
+                          src={document.file_url}
+                          alt={document.original_file_name ?? `${document.document_type} image`}
+                          className="h-24 w-40 max-w-full rounded-md border border-[#e5edf5] bg-[#f8fafc] object-contain"
+                        />
+                      </a>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -101,3 +131,10 @@ export default async function ApplicationDetailsPage({ params }: Props) {
     notFound();
   }
 }
+
+
+
+
+
+
+

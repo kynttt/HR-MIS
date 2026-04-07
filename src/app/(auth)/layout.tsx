@@ -9,5 +9,5 @@ export default async function AuthLayout({ children }: { children: React.ReactNo
     redirect("/dashboard");
   }
 
-  return <>{children}</>;
+  return <div className="page-enter">{children}</div>;
 }

@@ -3,9 +3,24 @@
 import { revalidatePath } from "next/cache";
 
 import { createClient } from "@/lib/supabase/server";
+import { deleteFileFromCloudinary, uploadFileToCloudinary } from "@/lib/cloudinary/server";
 import { logAudit } from "@/lib/utils/audit";
 
 import { employeeUpdateSchema } from "./schema";
+async function uploadEmployeeFile(params: {
+  employeeId: string;
+  documentType: string;
+  file: File;
+}): Promise<{ ok: true; filePath: string } | { ok: false; error: string }> {
+  const { employeeId, documentType, file } = params;
+
+  try {
+    const uploaded = await uploadFileToCloudinary(file, `university-hrmis/employees/${employeeId}/${documentType}`);
+    return { ok: true, filePath: uploaded.secureUrl };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Cloudinary upload failed." };
+  }
+}
 
 export async function updateEmployeeAction(employeeId: string, input: unknown) {
   const parsed = employeeUpdateSchema.parse(input);
@@ -95,20 +110,20 @@ export async function uploadEmployeeDocumentAction(formData: FormData) {
     return { ok: false as const, error: "File is required." };
   }
 
-  const filePath = `${employeeId}/${documentType}-${Date.now()}-${file.name}`;
-
-  const { error: uploadError } = await supabase.storage.from("employee-documents").upload(filePath, file, {
-    upsert: false
+  const uploadResult = await uploadEmployeeFile({
+    employeeId,
+    documentType,
+    file
   });
 
-  if (uploadError) {
-    return { ok: false as const, error: uploadError.message };
+  if (!uploadResult.ok) {
+    return { ok: false as const, error: uploadResult.error };
   }
 
   const { error: insertError } = await supabase.from("employee_documents").insert({
     employee_id: employeeId,
     document_type: documentType,
-    file_path: filePath,
+    file_path: uploadResult.filePath,
     original_file_name: file.name,
     uploaded_by: session?.user.id ?? null
   });
@@ -122,3 +137,56 @@ export async function uploadEmployeeDocumentAction(formData: FormData) {
   revalidatePath(`/employees/${employeeId}`);
   return { ok: true as const };
 }
+
+export async function deleteEmployeeDocumentAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const employeeIdEntry = formData.get("employee_id");
+  const documentIdEntry = formData.get("document_id");
+
+  const employeeId = typeof employeeIdEntry === "string" ? employeeIdEntry : "";
+  const documentId = typeof documentIdEntry === "string" ? documentIdEntry : "";
+
+  if (!employeeId || !documentId) {
+    return { ok: false as const, error: "Missing document reference." };
+  }
+
+  const { data: document, error: fetchError } = await supabase
+    .from("employee_documents")
+    .select("id, file_path")
+    .eq("id", documentId)
+    .eq("employee_id", employeeId)
+    .single();
+
+  if (fetchError || !document) {
+    return { ok: false as const, error: fetchError?.message ?? "Document not found." };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("employee_documents")
+    .delete()
+    .eq("id", documentId)
+    .eq("employee_id", employeeId);
+
+  if (deleteError) {
+    return { ok: false as const, error: deleteError.message };
+  }
+
+  if (/^https?:\/\//i.test(document.file_path)) {
+    try {
+      await deleteFileFromCloudinary(document.file_path);
+    } catch {
+      // Best effort cleanup for external file storage.
+    }
+  } else {
+    await supabase.storage.from("employee-documents").remove([document.file_path]);
+  }
+
+  await logAudit("delete_employee_document", "employees", employeeId, { document_id: documentId });
+
+  revalidatePath("/employees");
+  revalidatePath(`/employees/${employeeId}`);
+
+  return { ok: true as const };
+}
+
