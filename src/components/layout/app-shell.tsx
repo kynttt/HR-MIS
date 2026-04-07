@@ -8,6 +8,7 @@ import { Briefcase, Building2, LayoutDashboard, ShieldCheck, Users, UserCog, Fil
 
 import { signOutAction } from "@/features/auth/actions";
 import { type AdminRole } from "@/lib/utils/constants";
+import { cn } from "@/lib/utils/cn";
 
 type NavIcon = ComponentType<{ className?: string }>;
 
@@ -65,14 +66,20 @@ export function AppShell({ children, role }: { children: ReactNode; role: AdminR
             <nav className="space-y-1">
               {navItems.map((item) => {
                 const ItemIcon = item.icon;
+                const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
 
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className="flex items-center gap-2 rounded-md border border-transparent px-3 py-2 text-sm text-[#273951] transition-colors hover:border-[#d6d9fc] hover:bg-[#f4f7ff] hover:text-[#061b31]"
+                    className={cn(
+                      "flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
+                      isActive
+                        ? "border-[#cfd5ff] bg-[#eef2ff] text-[#2b1ea8] shadow-sm"
+                        : "border-transparent text-[#273951] hover:border-[#d6d9fc] hover:bg-[#f4f7ff] hover:text-[#061b31]"
+                    )}
                   >
-                    <ItemIcon className="h-4 w-4 shrink-0" />
+                    <ItemIcon className={cn("h-4 w-4 shrink-0", isActive ? "text-[#4f46e5]" : "text-current")} />
                     <span>{item.label}</span>
                   </Link>
                 );
@@ -85,6 +92,3 @@ export function AppShell({ children, role }: { children: ReactNode; role: AdminR
     </div>
   );
 }
-
-
-

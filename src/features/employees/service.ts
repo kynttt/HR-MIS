@@ -56,9 +56,18 @@ export type EmployeeDetails = {
     staff_category: string | null;
     office_assignment: string | null;
   } | null;
-  documents: Array<{ id: string; document_type: string; original_file_name: string | null; file_path: string }>;
+  documents: Array<{ id: string; document_type: string; original_file_name: string | null; file_path: string; file_url: string; is_image: boolean }>;
 };
 
+
+function isAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function isImagePath(value: string): boolean {
+  const normalized = value.split("?")[0].toLowerCase();
+  return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"].some((ext) => normalized.endsWith(ext));
+}
 export async function listEmployees(filters: EmployeeFilters): Promise<EmployeeListItem[]> {
   const supabase = await createClient();
 
@@ -169,11 +178,19 @@ export async function getEmployeeDetails(employeeId: string): Promise<EmployeeDe
           office_assignment: staff.office_assignment ?? null
         }
       : null,
-    documents: (employee.employee_documents ?? []).map((document: { id: string; document_type: string; original_file_name: string | null; file_path: string }) => ({
-      id: document.id,
-      document_type: document.document_type,
-      original_file_name: document.original_file_name ?? null,
-      file_path: document.file_path
-    }))
+    documents: (employee.employee_documents ?? []).map((document: { id: string; document_type: string; original_file_name: string | null; file_path: string }) => {
+      const fileUrl = isAbsoluteUrl(document.file_path)
+        ? document.file_path
+        : supabase.storage.from("employee-documents").getPublicUrl(document.file_path).data.publicUrl;
+
+      return {
+        id: document.id,
+        document_type: document.document_type,
+        original_file_name: document.original_file_name ?? null,
+        file_path: document.file_path,
+        file_url: fileUrl,
+        is_image: isImagePath(document.original_file_name ?? document.file_path)
+      };
+    })
   };
 }

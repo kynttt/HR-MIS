@@ -4,11 +4,20 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { deleteFileFromCloudinary, uploadFileToCloudinary } from "@/lib/cloudinary/server";
 import { logAudit } from "@/lib/utils/audit";
 import type { ApplicationDetails } from "./service";
 
 import { applicationNoteSchema, applicationStatusSchema, convertApplicationSchema, publicApplicationSchema } from "./schema";
 
+function isAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function isImagePath(value: string): boolean {
+  const normalized = value.split("?")[0].toLowerCase();
+  return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"].some((ext) => normalized.endsWith(ext));
+}
 export async function getApplicationDetailsAction(applicationId: string): Promise<ApplicationDetails> {
   const supabase = await createClient();
 
@@ -41,12 +50,20 @@ export async function getApplicationDetailsAction(applicationId: string): Promis
       email: applicantRow.email,
       phone: applicantRow.phone ?? null
     },
-    documents: (application.application_documents ?? []).map((document: { id: string; document_type: string; original_file_name: string | null; file_path: string }) => ({
-      id: document.id,
-      document_type: document.document_type,
-      original_file_name: document.original_file_name ?? null,
-      file_path: document.file_path
-    })),
+    documents: (application.application_documents ?? []).map((document: { id: string; document_type: string; original_file_name: string | null; file_path: string }) => {
+      const fileUrl = isAbsoluteUrl(document.file_path)
+        ? document.file_path
+        : supabase.storage.from("application-documents").getPublicUrl(document.file_path).data.publicUrl;
+
+      return {
+        id: document.id,
+        document_type: document.document_type,
+        original_file_name: document.original_file_name ?? null,
+        file_path: document.file_path,
+        file_url: fileUrl,
+        is_image: isImagePath(document.original_file_name ?? document.file_path)
+      };
+    }),
     notes: (application.application_notes ?? []).map((note: { id: string; note_text: string }) => ({
       id: note.id,
       note_text: note.note_text
@@ -65,6 +82,20 @@ function getFormValue(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+async function uploadApplicationFile(params: {
+  applicationId: string;
+  documentType: string;
+  file: File;
+}): Promise<{ ok: true; filePath: string } | { ok: false; error: string }> {
+  const { applicationId, documentType, file } = params;
+
+  try {
+    const uploaded = await uploadFileToCloudinary(file, `university-hrmis/applications/${applicationId}/${documentType}`);
+    return { ok: true, filePath: uploaded.secureUrl };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Cloudinary upload failed." };
+  }
+}
 export async function updateApplicationStatus(
   applicationId: string,
   status: "submitted" | "under_review" | "shortlisted" | "interview_scheduled" | "interviewed" | "for_requirements" | "accepted" | "rejected" | "withdrawn",
@@ -133,16 +164,17 @@ export async function submitApplicationAction(formData: FormData) {
       continue;
     }
 
-    const filePath = `${application.id}/${item.document_type}-${Date.now()}-${entry.name}`;
-    const { error: uploadError } = await supabase.storage.from("application-documents").upload(filePath, entry, {
-      upsert: false
+    const uploadResult = await uploadApplicationFile({
+      applicationId: application.id,
+      documentType: item.document_type,
+      file: entry
     });
 
-    if (!uploadError) {
+    if (uploadResult.ok) {
       await supabase.from("application_documents").insert({
         application_id: application.id,
         document_type: item.document_type,
-        file_path: filePath,
+        file_path: uploadResult.filePath,
         original_file_name: entry.name,
         uploaded_by: null
       });
@@ -231,20 +263,20 @@ export async function uploadApplicationDocumentAction(formData: FormData) {
     return { ok: false as const, error: "File is required." };
   }
 
-  const filePath = `${applicationId}/${documentType}-${Date.now()}-${file.name}`;
-
-  const { error: uploadError } = await supabase.storage.from("application-documents").upload(filePath, file, {
-    upsert: false
+  const uploadResult = await uploadApplicationFile({
+    applicationId,
+    documentType,
+    file
   });
 
-  if (uploadError) {
-    return { ok: false as const, error: uploadError.message };
+  if (!uploadResult.ok) {
+    return { ok: false as const, error: uploadResult.error };
   }
 
   const { error: insertError } = await supabase.from("application_documents").insert({
     application_id: applicationId,
     document_type: documentType,
-    file_path: filePath,
+    file_path: uploadResult.filePath,
     original_file_name: file.name,
     uploaded_by: session?.user.id ?? null
   });
@@ -259,6 +291,55 @@ export async function uploadApplicationDocumentAction(formData: FormData) {
   return { ok: true as const };
 }
 
+
+export async function deleteApplicationDocumentAction(formData: FormData) {
+  const supabase = await createClient();
+
+  const applicationId = getFormValue(formData, "application_id");
+  const documentId = getFormValue(formData, "document_id");
+
+  if (!applicationId || !documentId) {
+    return { ok: false as const, error: "Missing document reference." };
+  }
+
+  const { data: document, error: fetchError } = await supabase
+    .from("application_documents")
+    .select("id, file_path")
+    .eq("id", documentId)
+    .eq("application_id", applicationId)
+    .single();
+
+  if (fetchError || !document) {
+    return { ok: false as const, error: fetchError?.message ?? "Document not found." };
+  }
+
+  const { error: deleteError } = await supabase
+    .from("application_documents")
+    .delete()
+    .eq("id", documentId)
+    .eq("application_id", applicationId);
+
+  if (deleteError) {
+    return { ok: false as const, error: deleteError.message };
+  }
+
+  if (/^https?:\/\//i.test(document.file_path)) {
+    try {
+      await deleteFileFromCloudinary(document.file_path);
+    } catch {
+      // Best effort cleanup for external file storage.
+    }
+  } else {
+    await supabase.storage.from("application-documents").remove([document.file_path]);
+  }
+
+  await logAudit("delete_application_document", "applications", applicationId, { document_id: documentId });
+
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${applicationId}`);
+
+  return { ok: true as const };
+}
 export async function convertApplicationToEmployeeAction(input: unknown) {
   const parsedResult = convertApplicationSchema.safeParse(input);
 
@@ -338,3 +419,12 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
 
   return { ok: true as const, employeeId: employee.id };
 }
+
+
+
+
+
+
+
+
+

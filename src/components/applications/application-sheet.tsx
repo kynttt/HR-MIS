@@ -13,6 +13,7 @@ import { getApplicationDetailsAction } from "@/features/applications/actions"
 import Link from "next/link"
 import { FileText, MessageSquare, History, User } from "lucide-react"
 import type { ApplicationDetails } from "@/features/applications/service"
+import { ApplicationDocumentRemoveButton } from "@/features/applications/application-document-remove-button"
 
 interface ApplicationSheetProps {
   applicationId: string | null
@@ -132,12 +133,48 @@ export function ApplicationSheet({ applicationId, onClose }: ApplicationSheetPro
                 ) : (
                   <div className="space-y-2">
                     {data.documents.map((doc) => (
-                      <div key={doc.id} className="flex items-center gap-3 rounded-lg border border-[#e5edf5] bg-[#ffffff] p-3">
-                        <FileText className="h-4 w-4 text-[#64748d] shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-[#061b31] truncate">{doc.original_file_name ?? doc.document_type}</p>
-                          <p className="text-xs text-[#64748d]">{doc.document_type}</p>
+                      <div key={doc.id} className="rounded-lg border border-[#e5edf5] bg-[#ffffff] p-3">
+                        <div className="flex items-center gap-3">
+                          <FileText className="h-4 w-4 text-[#64748d] shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-[#061b31] truncate">{doc.original_file_name ?? doc.document_type}</p>
+                            <p className="text-xs text-[#64748d] capitalize">{doc.document_type}</p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <a
+                              href={doc.file_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-medium text-[#533afd] hover:underline"
+                            >
+                              View
+                            </a>
+                            <ApplicationDocumentRemoveButton
+                              applicationId={data.id}
+                              documentId={doc.id}
+                              fileName={doc.original_file_name ?? doc.document_type}
+                              onRemoved={() => {
+                                setData((previous) =>
+                                  previous
+                                    ? {
+                                        ...previous,
+                                        documents: previous.documents.filter((item) => item.id !== doc.id)
+                                      }
+                                    : previous
+                                )
+                              }}
+                            />
+                          </div>
                         </div>
+                        {doc.is_image ? (
+                          <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block max-w-full">
+                            <img
+                              src={doc.file_url}
+                              alt={doc.original_file_name ?? `${doc.document_type} image`}
+                              className="h-24 w-40 max-w-full rounded-md border border-[#e5edf5] bg-[#f8fafc] object-contain"
+                            />
+                          </a>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -193,5 +230,12 @@ export function ApplicationSheet({ applicationId, onClose }: ApplicationSheetPro
     </Sheet>
   )
 }
+
+
+
+
+
+
+
 
 

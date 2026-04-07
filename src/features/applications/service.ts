@@ -36,10 +36,26 @@ export type ApplicationDetails = {
     email: string;
     phone: string | null;
   };
-  documents: Array<{ id: string; document_type: string; original_file_name: string | null; file_path: string }>;
+  documents: Array<{
+    id: string;
+    document_type: string;
+    original_file_name: string | null;
+    file_path: string;
+    file_url: string;
+    is_image: boolean;
+  }>;
   notes: Array<{ id: string; note_text: string }>;
   status_history: Array<{ id: string; from_status: string | null; to_status: string; changed_at: string }>;
 };
+
+function isAbsoluteUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function isImagePath(value: string): boolean {
+  const normalized = value.split("?")[0].toLowerCase();
+  return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"].some((ext) => normalized.endsWith(ext));
+}
 
 export async function listApplications(filters: ApplicationFilters): Promise<ApplicationListItem[]> {
   const supabase = await createClient();
@@ -109,6 +125,7 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
     };
   });
 }
+
 export async function getApplicationDetails(applicationId: string): Promise<ApplicationDetails> {
   const supabase = await createClient();
 
@@ -141,12 +158,20 @@ export async function getApplicationDetails(applicationId: string): Promise<Appl
       email: applicantRow.email,
       phone: applicantRow.phone ?? null
     },
-    documents: (application.application_documents ?? []).map((document) => ({
-      id: document.id,
-      document_type: document.document_type,
-      original_file_name: document.original_file_name ?? null,
-      file_path: document.file_path
-    })),
+    documents: (application.application_documents ?? []).map((document) => {
+      const fileUrl = isAbsoluteUrl(document.file_path)
+        ? document.file_path
+        : supabase.storage.from("application-documents").getPublicUrl(document.file_path).data.publicUrl;
+
+      return {
+        id: document.id,
+        document_type: document.document_type,
+        original_file_name: document.original_file_name ?? null,
+        file_path: document.file_path,
+        file_url: fileUrl,
+        is_image: isImagePath(document.original_file_name ?? document.file_path)
+      };
+    }),
     notes: (application.application_notes ?? []).map((note) => ({
       id: note.id,
       note_text: note.note_text
@@ -159,4 +184,3 @@ export async function getApplicationDetails(applicationId: string): Promise<Appl
     }))
   };
 }
-
