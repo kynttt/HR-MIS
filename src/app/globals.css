@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-canvas: 246 249 252;
+  --bg-surface: 255 255 255;
+  --bg-soft: 248 251 255;
+  --text-primary: 6 27 49;
+  --text-secondary: 39 57 81;
+  --text-muted: 100 116 141;
+  --border-default: 229 237 245;
+  --border-soft: 214 217 252;
+  --brand: 83 58 253;
+  --brand-hover: 68 52 212;
+}
+
+@layer base {
+  * {
+    @apply border-transparent;
+    font-feature-settings: "ss01";
+  }
+
+  html,
+  body {
+    min-height: 100%;
+  }
+
+  body {
+    background-color: rgb(var(--bg-canvas));
+    background-image:
+      radial-gradient(circle at 90% -10%, rgba(249, 107, 238, 0.14), transparent 34%),
+      radial-gradient(circle at 15% -25%, rgba(83, 58, 253, 0.12), transparent 40%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(246, 249, 252, 1));
+    color: rgb(var(--text-primary));
+    font-family: var(--font-body), "Manrope", "Segoe UI", sans-serif;
+    text-rendering: geometricPrecision;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display), "Manrope", "Segoe UI", sans-serif;
+    color: rgb(var(--text-primary));
+    letter-spacing: -0.03em;
+    font-weight: 300;
+  }
+
+  ::selection {
+    background: rgba(83, 58, 253, 0.22);
+    color: rgb(var(--text-primary));
+  }
+}
+
+@layer components {
+  .surface-panel {
+    background: rgb(var(--bg-surface));
+    border: 1px solid rgb(var(--border-default));
+    border-radius: 0.5rem;
+    box-shadow: rgba(50, 50, 93, 0.12) 0px 20px 35px -28px, rgba(0, 0, 0, 0.08) 0px 12px 24px -18px;
+  }
+
+  .surface-card {
+    background: rgb(var(--bg-surface));
+    border: 1px solid rgb(var(--border-default));
+    border-radius: 0.5rem;
+    box-shadow: rgba(50, 50, 93, 0.16) 0px 24px 40px -30px, rgba(0, 0, 0, 0.08) 0px 16px 26px -22px;
+  }
+
+  .code-label {
+    font-family: var(--font-mono), "Source Code Pro", Menlo, monospace;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-feature-settings: normal;
+  }
+}
