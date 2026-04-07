@@ -80,10 +80,11 @@ export function AppShell({ children, role }: { children: ReactNode; role: AdminR
             </nav>
           </aside>
         )}
-        <main className="min-w-0">{children}</main>
+        <main className="min-w-0 page-enter">{children}</main>
       </div>
     </div>
   );
 }
+
 
 

@@ -1,5 +1,4 @@
-import { Briefcase, Building2, GraduationCap, User, UserCheck, Users } from "lucide-react";
-import { LayoutDashboard } from "lucide-react";
+import { Briefcase, Building2, GraduationCap, LayoutDashboard, User, UserCheck, Users } from "lucide-react";
 
 import { DepartmentDonut } from "@/components/dashboard/department-chart";
 import { MetricCard } from "@/components/dashboard/metric-card";
@@ -47,9 +46,3 @@ export default async function DashboardPage() {
     </div>
   );
 }
-
-
-
-
-
-
