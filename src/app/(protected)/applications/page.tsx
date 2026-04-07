@@ -1,26 +1,37 @@
-import { Select } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { listApplications } from "@/features/applications/service"
-import { listDepartments } from "@/features/departments/service"
-import { ApplicationsClient } from "@/components/applications/applications-client"
-import { FileStack } from "lucide-react"
+import { FileStack } from "lucide-react";
+
+import { ApplicationsClient } from "@/components/applications/applications-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { QueryPagination } from "@/components/ui/query-pagination";
+import { Select } from "@/components/ui/select";
+import { listApplicationsPaginated } from "@/features/applications/service";
+import { listDepartments } from "@/features/departments/service";
 
 type Props = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+const PAGE_SIZE = 10;
+
+function toPositiveInt(value: string | string[] | undefined, fallback: number): number {
+  if (typeof value !== "string") return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export default async function ApplicationsPage({ searchParams }: Props) {
-  const query = await searchParams
-  const q = typeof query.q === "string" ? query.q : ""
-  const status = typeof query.status === "string" ? query.status : ""
-  const departmentId = typeof query.departmentId === "string" ? query.departmentId : ""
-  const roleType = typeof query.roleType === "string" ? query.roleType : ""
+  const query = await searchParams;
+  const q = typeof query.q === "string" ? query.q : "";
+  const status = typeof query.status === "string" ? query.status : "";
+  const departmentId = typeof query.departmentId === "string" ? query.departmentId : "";
+  const roleType = typeof query.roleType === "string" ? query.roleType : "";
+  const page = toPositiveInt(query.page, 1);
 
-  const [applications, departments] = await Promise.all([
-    listApplications({ q, status, departmentId, roleType }),
+  const [{ items: applications, total }, departments] = await Promise.all([
+    listApplicationsPaginated({ q, status, departmentId, roleType }, page, PAGE_SIZE),
     listDepartments()
-  ])
+  ]);
 
   return (
     <div className="space-y-6">
@@ -56,11 +67,11 @@ export default async function ApplicationsPage({ searchParams }: Props) {
         <Button type="submit" size="sm">Apply Filters</Button>
       </form>
 
-      <ApplicationsClient applications={applications} />
+      <div className="overflow-hidden rounded-lg border border-[#e5edf5] bg-[#f6f9fc]">
+        <ApplicationsClient applications={applications} />
+        <QueryPagination page={page} pageSize={PAGE_SIZE} total={total} />
+      </div>
     </div>
-  )
+  );
 }
-
-
-
 

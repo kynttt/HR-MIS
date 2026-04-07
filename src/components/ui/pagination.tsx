@@ -42,7 +42,7 @@ const Pagination = ({ className, page, pageSize, total, onPageChange, ...props }
         .map((item, idx) =>
           item === "ellipsis" ? (
             <span key={`ellipsis-${idx}`} className="px-2 text-[#64748d]">
-              …
+              ...
             </span>
           ) : (
             <PaginationPage
@@ -102,4 +102,5 @@ const PaginationPage = ({
 )
 
 export { Pagination }
+
 

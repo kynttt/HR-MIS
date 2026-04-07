@@ -8,6 +8,11 @@ export type EmployeeFilters = {
   active?: string;
 };
 
+export type PaginatedEmployeesResult = {
+  items: EmployeeListItem[];
+  total: number;
+};
+
 export type EmployeeListItem = {
   id: string;
   employee_id_code: string;
@@ -194,3 +199,69 @@ export async function getEmployeeDetails(employeeId: string): Promise<EmployeeDe
     })
   };
 }
+
+export async function listEmployeesPaginated(
+  filters: EmployeeFilters,
+  page: number,
+  pageSize: number
+): Promise<PaginatedEmployeesResult> {
+  const supabase = await createClient();
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from("employees")
+    .select("id, employee_id_code, first_name, last_name, email, role_type, employment_status, is_active, departments(department_name)", { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (filters.roleType) {
+    query = query.eq("role_type", filters.roleType);
+  }
+
+  if (filters.departmentId) {
+    query = query.eq("department_id", filters.departmentId);
+  }
+
+  if (filters.employmentStatus) {
+    query = query.eq("employment_status", filters.employmentStatus);
+  }
+
+  if (filters.active === "true") {
+    query = query.eq("is_active", true);
+  }
+  if (filters.active === "false") {
+    query = query.eq("is_active", false);
+  }
+
+  if (filters.q) {
+    const keyword = filters.q.trim();
+    query = query.or(`first_name.ilike.%${keyword}%,last_name.ilike.%${keyword}%,email.ilike.%${keyword}%,employee_id_code.ilike.%${keyword}%`);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const items = (data ?? []).map((item) => {
+    const department = Array.isArray(item.departments) ? item.departments[0] : item.departments;
+    return {
+      id: item.id,
+      employee_id_code: item.employee_id_code,
+      first_name: item.first_name,
+      last_name: item.last_name,
+      email: item.email,
+      role_type: item.role_type,
+      employment_status: item.employment_status,
+      is_active: item.is_active,
+      department_name: department?.department_name ?? null
+    };
+  });
+
+  return { items, total: count ?? 0 };
+}
+
+
+

@@ -1,31 +1,42 @@
-import Link from "next/link"
-import { listEmployees } from "@/features/employees/service"
-import { listDepartments } from "@/features/departments/service"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Select } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { SortHeader } from "@/components/ui/sort-header"
-import { Users } from "lucide-react"
+import Link from "next/link";
+import { Users } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { QueryPagination } from "@/components/ui/query-pagination";
+import { Select } from "@/components/ui/select";
+import { SortHeader } from "@/components/ui/sort-header";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { listDepartments } from "@/features/departments/service";
+import { listEmployeesPaginated } from "@/features/employees/service";
 
 type Props = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+const PAGE_SIZE = 10;
+
+function toPositiveInt(value: string | string[] | undefined, fallback: number): number {
+  if (typeof value !== "string") return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export default async function EmployeesPage({ searchParams }: Props) {
-  const query = await searchParams
+  const query = await searchParams;
 
-  const q = typeof query.q === "string" ? query.q : ""
-  const roleType = typeof query.roleType === "string" ? query.roleType : ""
-  const departmentId = typeof query.departmentId === "string" ? query.departmentId : ""
-  const employmentStatus = typeof query.employmentStatus === "string" ? query.employmentStatus : ""
-  const active = typeof query.active === "string" ? query.active : ""
+  const q = typeof query.q === "string" ? query.q : "";
+  const roleType = typeof query.roleType === "string" ? query.roleType : "";
+  const departmentId = typeof query.departmentId === "string" ? query.departmentId : "";
+  const employmentStatus = typeof query.employmentStatus === "string" ? query.employmentStatus : "";
+  const active = typeof query.active === "string" ? query.active : "";
+  const page = toPositiveInt(query.page, 1);
 
-  const [employees, departments] = await Promise.all([
-    listEmployees({ q, roleType, departmentId, employmentStatus, active }),
+  const [{ items: employees, total }, departments] = await Promise.all([
+    listEmployeesPaginated({ q, roleType, departmentId, employmentStatus, active }, page, PAGE_SIZE),
     listDepartments()
-  ])
+  ]);
 
   return (
     <div className="space-y-6">
@@ -60,70 +71,69 @@ export default async function EmployeesPage({ searchParams }: Props) {
         <Button type="submit" size="sm">Apply Filters</Button>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border border-[#e5edf5] bg-[#f6f9fc]">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Employee Code</TableHead>
-              <SortHeader name="name" label="Name" currentSort="" currentOrder="asc" />
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Department</TableHead>
-              <SortHeader name="status" label="Status" currentSort="" currentOrder="asc" />
-              <SortHeader name="active" label="Active" currentSort="" currentOrder="asc" />
-              <TableHead>Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {employees.length === 0 ? (
+      <div className="overflow-hidden rounded-lg border border-[#e5edf5] bg-[#f6f9fc]">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-[#64748d] py-6">
-                  No employees found.
-                </TableCell>
+                <TableHead>Employee Code</TableHead>
+                <SortHeader name="name" label="Name" currentSort="" currentOrder="asc" />
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Department</TableHead>
+                <SortHeader name="status" label="Status" currentSort="" currentOrder="asc" />
+                <SortHeader name="active" label="Active" currentSort="" currentOrder="asc" />
+                <TableHead>Action</TableHead>
               </TableRow>
-            ) : (
-              employees.map((employee) => (
-                <TableRow key={employee.id}>
-                  <TableCell className="text-[#061b31]">{employee.employee_id_code}</TableCell>
-                  <TableCell className="font-medium text-[#061b31]">
-                    {employee.first_name} {employee.last_name}
-                  </TableCell>
-                  <TableCell className="text-[#64748d]">{employee.email}</TableCell>
-                  <TableCell className="text-[#64748d] capitalize">{employee.role_type}</TableCell>
-                  <TableCell className="text-[#64748d]">{employee.department_name ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        employee.employment_status === "active"
-                          ? "success"
-                          : employee.employment_status === "probationary"
-                          ? "warning"
-                          : "muted"
-                      }
-                    >
-                      {employee.employment_status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={employee.is_active ? "success" : "muted"}>
-                      {employee.is_active ? "Yes" : "No"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/employees/${employee.id}`} className="text-xs text-brand-700 hover:text-brand-500">
-                      View
-                    </Link>
+            </TableHeader>
+            <TableBody>
+              {employees.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center text-[#64748d] py-6">
+                    No employees found.
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                employees.map((employee) => (
+                  <TableRow key={employee.id}>
+                    <TableCell className="text-[#061b31]">{employee.employee_id_code}</TableCell>
+                    <TableCell className="font-medium text-[#061b31]">
+                      {employee.first_name} {employee.last_name}
+                    </TableCell>
+                    <TableCell className="text-[#64748d]">{employee.email}</TableCell>
+                    <TableCell className="capitalize text-[#64748d]">{employee.role_type}</TableCell>
+                    <TableCell className="text-[#64748d]">{employee.department_name ?? "-"}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          employee.employment_status === "active"
+                            ? "success"
+                            : employee.employment_status === "probationary"
+                            ? "warning"
+                            : "muted"
+                        }
+                      >
+                        {employee.employment_status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={employee.is_active ? "success" : "muted"}>
+                        {employee.is_active ? "Yes" : "No"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/employees/${employee.id}`} className="text-xs text-brand-700 hover:text-brand-500">
+                        View
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+        <QueryPagination page={page} pageSize={PAGE_SIZE} total={total} />
       </div>
     </div>
-  )
+  );
 }
-
-
-
-
