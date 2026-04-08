@@ -4,12 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminRole } from "@/features/auth/service";
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { deleteFileFromCloudinary, uploadFileToCloudinary } from "@/lib/cloudinary/server";
 import { logRateLimitBlockedEvent } from "@/lib/security/logging";
 import { getRequestFingerprint } from "@/lib/security/request";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 import { validateDocumentFile } from "@/lib/security/upload";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/utils/audit";
 import type { ApplicationDetails } from "./service";
 
@@ -17,6 +19,19 @@ import { applicationNoteSchema, applicationStatusSchema, convertApplicationSchem
 
 const APPLICATION_MANAGEMENT_ROLES = ["super_admin", "hr_admin", "department_admin"] as const;
 const APPLICATION_DOCUMENT_TYPES = new Set(["resume", "diploma", "tor", "certificates", "other"]);
+
+function getSafeReturnPath(formData: FormData): string {
+  const raw = getFormValue(formData, "return_to");
+  if (!raw || !raw.startsWith("/")) {
+    return "/apply";
+  }
+  return raw;
+}
+
+function withQuery(path: string, key: "success" | "error", value: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${key}=${value}`;
+}
 
 function isAbsoluteUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
@@ -39,8 +54,9 @@ async function cleanupCloudinaryUrls(urls: string[]) {
 
 export async function getApplicationDetailsAction(applicationId: string): Promise<ApplicationDetails> {
   await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: application, error: applicationError } = await supabase
     .from("applications")
@@ -48,6 +64,7 @@ export async function getApplicationDetailsAction(applicationId: string): Promis
       "id, status, submitted_at, converted_employee_id, applicants(first_name, last_name, email, phone), application_documents(id, document_type, original_file_name, file_path), application_notes(id, note_text), application_status_history(id, from_status, to_status, changed_at)"
     )
     .eq("id", applicationId)
+    .eq("organization_id", organizationId)
     .single();
 
   if (applicationError || !application) {
@@ -127,6 +144,7 @@ export async function updateApplicationStatus(
 }
 
 export async function submitApplicationAction(formData: FormData) {
+  const returnPath = getSafeReturnPath(formData);
   const fingerprint = await getRequestFingerprint("apply");
   const globalRateLimitKey = `${fingerprint}:global`;
   const globalLimit = await enforceRateLimit({ key: globalRateLimitKey, max: 10, windowMs: 10 * 60_000 });
@@ -137,10 +155,10 @@ export async function submitApplicationAction(formData: FormData) {
       retryAfterMs: globalLimit.retryAfterMs,
       remaining: globalLimit.remaining
     });
-    redirect("/apply?error=Too%20many%20submissions.%20Please%20try%20again%20later.");
+    redirect(withQuery(returnPath, "error", encodeURIComponent("Too many submissions. Please try again later.")));
   }
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const parsedResult = publicApplicationSchema.safeParse({
     job_opening_id: getFormValue(formData, "job_opening_id"),
@@ -155,10 +173,21 @@ export async function submitApplicationAction(formData: FormData) {
 
   if (!parsedResult.success) {
     const firstIssue = parsedResult.error.issues[0];
-    redirect(`/apply?error=${encodeURIComponent(firstIssue?.message ?? "Invalid submission data")}`);
+    redirect(withQuery(returnPath, "error", encodeURIComponent(firstIssue?.message ?? "Invalid submission data")));
   }
 
   const parsed = parsedResult.data;
+
+  const { data: job, error: jobError } = await supabase
+    .from("job_openings")
+    .select("id, organization_id, status")
+    .eq("id", parsed.job_opening_id)
+    .eq("status", "open")
+    .single();
+
+  if (jobError || !job) {
+    redirect(withQuery(returnPath, "error", encodeURIComponent("Selected job opening is unavailable.")));
+  }
 
   const emailRateLimitKey = `apply:email:${parsed.email.toLowerCase()}`;
   const emailLimit = await enforceRateLimit({
@@ -174,17 +203,19 @@ export async function submitApplicationAction(formData: FormData) {
       retryAfterMs: emailLimit.retryAfterMs,
       remaining: emailLimit.remaining
     });
-    redirect("/apply?error=Too%20many%20attempts%20for%20this%20email.%20Please%20try%20again%20later.");
+    redirect(withQuery(returnPath, "error", encodeURIComponent("Too many attempts for this email. Please try again later.")));
   }
 
   const uploadedCloudinaryUrls: string[] = [];
-  let applicantId: string | null = null;
-  let applicationId: string | null = null;
+  const applicantId = crypto.randomUUID();
+  const applicationId = crypto.randomUUID();
 
   try {
-    const { data: applicant, error: applicantError } = await supabase
+    const { error: applicantError } = await supabase
       .from("applicants")
       .insert({
+        id: applicantId,
+        organization_id: job.organization_id,
         first_name: parsed.first_name,
         middle_name: parsed.middle_name ?? null,
         last_name: parsed.last_name,
@@ -192,31 +223,25 @@ export async function submitApplicationAction(formData: FormData) {
         email: parsed.email,
         phone: parsed.phone ?? null,
         address: parsed.address ?? null
-      })
-      .select("id")
-      .single();
+      });
 
-    if (applicantError || !applicant) {
+    if (applicantError) {
       throw new Error(applicantError?.message ?? "Failed to create applicant record.");
     }
 
-    applicantId = applicant.id;
-
-    const { data: application, error: applicationError } = await supabase
+    const { error: applicationError } = await supabase
       .from("applications")
       .insert({
-        applicant_id: applicant.id,
+        id: applicationId,
+        applicant_id: applicantId,
         job_opening_id: parsed.job_opening_id,
+        organization_id: job.organization_id,
         status: "submitted"
-      })
-      .select("id")
-      .single();
+      });
 
-    if (applicationError || !application) {
+    if (applicationError) {
       throw new Error(applicationError?.message ?? "Failed to create application record.");
     }
-
-    applicationId = application.id;
 
     const documentInputs: Array<{ field: string; document_type: "resume" | "diploma" | "tor" | "certificates" | "other" }> = [
       { field: "resume", document_type: "resume" },
@@ -238,7 +263,7 @@ export async function submitApplicationAction(formData: FormData) {
       }
 
       const uploadResult = await uploadApplicationFile({
-        applicationId: application.id,
+        applicationId,
         documentType: item.document_type,
         file: entry
       });
@@ -250,7 +275,7 @@ export async function submitApplicationAction(formData: FormData) {
       uploadedCloudinaryUrls.push(uploadResult.filePath);
 
       const { error: documentInsertError } = await supabase.from("application_documents").insert({
-        application_id: application.id,
+        application_id: applicationId,
         document_type: item.document_type,
         file_path: uploadResult.filePath,
         original_file_name: entry.name,
@@ -263,7 +288,7 @@ export async function submitApplicationAction(formData: FormData) {
     }
 
     const { error: statusHistoryError } = await supabase.from("application_status_history").insert({
-      application_id: application.id,
+      application_id: applicationId,
       from_status: null,
       to_status: "submitted",
       changed_by: null,
@@ -274,33 +299,40 @@ export async function submitApplicationAction(formData: FormData) {
       throw new Error(statusHistoryError.message);
     }
 
-    await logAudit("submit_application", "applications", application.id, { email: parsed.email }).catch((error) => {
+    await logAudit("submit_application", "applications", applicationId, { email: parsed.email }).catch((error) => {
       console.error("Audit log failed for submit_application", error);
     });
 
-    redirect("/apply?success=1");
+    redirect(withQuery(returnPath, "success", "1"));
   } catch (error) {
-    if (applicationId) {
-      await supabase.from("application_documents").delete().eq("application_id", applicationId);
-      await supabase.from("application_status_history").delete().eq("application_id", applicationId);
-      await supabase.from("applications").delete().eq("id", applicationId);
+    const isRedirectControlFlow =
+      typeof error === "object" &&
+      error !== null &&
+      "digest" in error &&
+      typeof (error as { digest?: unknown }).digest === "string" &&
+      (error as { digest: string }).digest.startsWith("NEXT_REDIRECT");
+
+    if (isRedirectControlFlow) {
+      throw error;
     }
 
-    if (applicantId) {
-      await supabase.from("applicants").delete().eq("id", applicantId);
-    }
+    await supabase.from("application_documents").delete().eq("application_id", applicationId);
+    await supabase.from("application_status_history").delete().eq("application_id", applicationId);
+    await supabase.from("applications").delete().eq("id", applicationId);
+    await supabase.from("applicants").delete().eq("id", applicantId);
 
     await cleanupCloudinaryUrls(uploadedCloudinaryUrls);
 
     const message = error instanceof Error ? error.message : "Failed to submit application.";
-    redirect(`/apply?error=${encodeURIComponent(message)}`);
+    redirect(withQuery(returnPath, "error", encodeURIComponent(message)));
   }
 }
 
 export async function updateApplicationStatusAction(input: unknown) {
   await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
@@ -312,13 +344,22 @@ export async function updateApplicationStatusAction(input: unknown) {
 
   const parsed = parsedResult.data;
 
-  const { data: existing, error: existingError } = await supabase.from("applications").select("status").eq("id", parsed.application_id).single();
+  const { data: existing, error: existingError } = await supabase
+    .from("applications")
+    .select("status")
+    .eq("id", parsed.application_id)
+    .eq("organization_id", organizationId)
+    .single();
 
   if (existingError) {
     return { ok: false as const, error: existingError.message };
   }
 
-  const { error } = await supabase.from("applications").update({ status: parsed.status }).eq("id", parsed.application_id);
+  const { error } = await supabase
+    .from("applications")
+    .update({ status: parsed.status })
+    .eq("id", parsed.application_id)
+    .eq("organization_id", organizationId);
 
   if (error) {
     return { ok: false as const, error: error.message };
@@ -345,8 +386,9 @@ export async function updateApplicationStatusAction(input: unknown) {
 
 export async function addApplicationNoteAction(input: unknown) {
   await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
@@ -357,6 +399,17 @@ export async function addApplicationNoteAction(input: unknown) {
   }
 
   const parsed = parsedResult.data;
+
+  const { data: appExists, error: appExistsError } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("id", parsed.application_id)
+    .eq("organization_id", organizationId)
+    .single();
+
+  if (appExistsError || !appExists) {
+    return { ok: false as const, error: appExistsError?.message ?? "Application not found." };
+  }
 
   const { error } = await supabase.from("application_notes").insert({
     application_id: parsed.application_id,
@@ -376,8 +429,9 @@ export async function addApplicationNoteAction(input: unknown) {
 
 export async function uploadApplicationDocumentAction(formData: FormData) {
   await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
@@ -410,6 +464,17 @@ export async function uploadApplicationDocumentAction(formData: FormData) {
 
   if (!APPLICATION_DOCUMENT_TYPES.has(documentType)) {
     return { ok: false as const, error: "Invalid document type." };
+  }
+
+  const { data: appExists, error: appExistsError } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("id", applicationId)
+    .eq("organization_id", organizationId)
+    .single();
+
+  if (appExistsError || !appExists) {
+    return { ok: false as const, error: appExistsError?.message ?? "Application not found." };
   }
 
   const fileValidation = validateDocumentFile(file as File);
@@ -450,14 +515,26 @@ export async function uploadApplicationDocumentAction(formData: FormData) {
 
 export async function deleteApplicationDocumentAction(formData: FormData) {
   await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const applicationId = getFormValue(formData, "application_id");
   const documentId = getFormValue(formData, "document_id");
 
   if (!applicationId || !documentId) {
     return { ok: false as const, error: "Missing document reference." };
+  }
+
+  const { data: appExists, error: appExistsError } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("id", applicationId)
+    .eq("organization_id", organizationId)
+    .single();
+
+  if (appExistsError || !appExists) {
+    return { ok: false as const, error: appExistsError?.message ?? "Application not found." };
   }
 
   const { data: document, error: fetchError } = await supabase
@@ -504,6 +581,7 @@ export async function deleteApplicationDocumentAction(formData: FormData) {
 
 export async function convertApplicationToEmployeeAction(input: unknown) {
   await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
   const parsedResult = convertApplicationSchema.safeParse(input);
 
@@ -513,12 +591,13 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
   }
 
   const parsed = parsedResult.data;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: application, error: appError } = await supabase
     .from("applications")
     .select("id, status, applicant_id, converted_employee_id, job_openings(role_type)")
     .eq("id", parsed.application_id)
+    .eq("organization_id", organizationId)
     .single();
 
   if (appError || !application) {
@@ -545,6 +624,7 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
     .from("employees")
     .insert({
       employee_id_code: parsed.employee_id_code,
+      organization_id: organizationId,
       source_application_id: parsed.application_id,
       first_name: applicant.first_name,
       middle_name: applicant.middle_name,
@@ -596,7 +676,3 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
 
   return { ok: true as const, employeeId: employee.id };
 }
-
-
-
-

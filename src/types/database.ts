@@ -3,22 +3,35 @@ export type Json = string | number | boolean | null | { [key: string]: Json | un
 export type Database = {
   public: {
     Tables: {
+      organizations: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+      };
       profiles: {
         Row: {
           id: string;
           full_name: string | null;
+          organization_id: string;
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id: string;
           full_name?: string | null;
+          organization_id?: string;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           full_name?: string | null;
+          organization_id?: string;
           created_at?: string;
           updated_at?: string;
         };
@@ -49,6 +62,7 @@ export type Database = {
       departments: {
         Row: {
           id: string;
+          organization_id: string;
           department_code: string;
           department_name: string;
           description: string | null;
@@ -60,6 +74,7 @@ export type Database = {
       job_openings: {
         Row: {
           id: string;
+          organization_id: string;
           job_title: string;
           department_id: string;
           role_type: "faculty" | "staff";
@@ -75,6 +90,7 @@ export type Database = {
       applicants: {
         Row: {
           id: string;
+          organization_id: string;
           first_name: string;
           middle_name: string | null;
           last_name: string;
@@ -92,6 +108,7 @@ export type Database = {
       applications: {
         Row: {
           id: string;
+          organization_id: string;
           applicant_id: string;
           job_opening_id: string;
           status: import("@/types/domain").ApplicationStatus;
@@ -135,6 +152,7 @@ export type Database = {
       employees: {
         Row: {
           id: string;
+          organization_id: string;
           employee_id_code: string;
           first_name: string;
           middle_name: string | null;
@@ -167,7 +185,3 @@ export type Database = {
     Enums: Record<string, never>;
   };
 };
-
-
-
-

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireAdminRole } from "@/features/auth/service";
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { logAudit } from "@/lib/utils/audit";
 import { createClient } from "@/lib/supabase/server";
 
@@ -14,11 +15,12 @@ export async function createDepartmentAction(input: unknown) {
   await requireAdminRole(DEPARTMENT_MANAGEMENT_ROLES);
 
   const payload = departmentSchema.parse(input);
+  const organizationId = await getCurrentUserOrganizationId();
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .from("departments")
-    .insert(payload)
+    .insert({ ...payload, organization_id: organizationId })
     .select("id")
     .single();
 
@@ -34,10 +36,15 @@ export async function createDepartmentAction(input: unknown) {
 
 export async function toggleDepartmentAction(id: string, isActive: boolean): Promise<void> {
   await requireAdminRole(DEPARTMENT_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
   const supabase = await createClient();
 
-  const { error } = await supabase.from("departments").update({ is_active: isActive }).eq("id", id);
+  const { error } = await supabase
+    .from("departments")
+    .update({ is_active: isActive })
+    .eq("id", id)
+    .eq("organization_id", organizationId);
 
   if (error) {
     throw new Error(error.message);

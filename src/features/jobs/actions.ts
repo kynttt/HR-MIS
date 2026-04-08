@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireAdminRole } from "@/features/auth/service";
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/utils/audit";
 
@@ -14,6 +15,7 @@ export async function createJobOpeningAction(input: unknown) {
   await requireAdminRole(JOB_MANAGEMENT_ROLES);
 
   const payload = jobOpeningSchema.parse(input);
+  const organizationId = await getCurrentUserOrganizationId();
   const supabase = await createClient();
 
   const {
@@ -24,6 +26,7 @@ export async function createJobOpeningAction(input: unknown) {
     .from("job_openings")
     .insert({
       ...payload,
+      organization_id: organizationId,
       created_by: session?.user.id ?? null
     })
     .select("id")
@@ -44,6 +47,7 @@ export async function updateJobOpeningAction(id: string, input: unknown) {
   await requireAdminRole(JOB_MANAGEMENT_ROLES);
 
   const payload = jobOpeningSchema.parse(input);
+  const organizationId = await getCurrentUserOrganizationId();
   const supabase = await createClient();
 
   const { error } = await supabase
@@ -53,7 +57,8 @@ export async function updateJobOpeningAction(id: string, input: unknown) {
       description: payload.description?.trim() ? payload.description : null,
       qualifications: payload.qualifications?.trim() ? payload.qualifications : null
     })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("organization_id", organizationId);
 
   if (error) {
     return { ok: false as const, error: error.message };
@@ -70,10 +75,16 @@ export async function updateJobOpeningAction(id: string, input: unknown) {
 
 export async function setJobOpeningStatusAction(id: string, status: "open" | "closed"): Promise<void> {
   await requireAdminRole(JOB_MANAGEMENT_ROLES);
+  const organizationId = await getCurrentUserOrganizationId();
 
   const supabase = await createClient();
 
-  const { error } = await supabase.from("job_openings").update({ status }).eq("id", id);
+  const { error } = await supabase
+    .from("job_openings")
+    .update({ status })
+    .eq("id", id)
+    .eq("organization_id", organizationId);
+
   if (error) {
     throw new Error(error.message);
   }

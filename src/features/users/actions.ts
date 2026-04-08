@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireAdminRole } from "@/features/auth/service";
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/utils/audit";
@@ -61,12 +62,13 @@ async function setSingleUserRole(userId: string, role: ManagedRole) {
   }
 }
 
-async function upsertProfileAndRole(userId: string, fullName: string, role: ManagedRole) {
+async function upsertProfileAndRole(userId: string, fullName: string, role: ManagedRole, organizationId: string) {
   const db = await createClient();
 
   const { error: profileError } = await db.from("profiles").upsert({
     id: userId,
-    full_name: fullName
+    full_name: fullName,
+    organization_id: organizationId
   });
 
   if (profileError) {
@@ -80,6 +82,7 @@ export async function inviteManagedUserAction(input: unknown) {
   await requireAdminRole(["super_admin", "hr_admin"]);
 
   const payload = inviteUserSchema.parse(input);
+  const organizationId = await getCurrentUserOrganizationId();
   const admin = createAdminClient();
 
   const { data, error } = await admin.auth.admin.inviteUserByEmail(payload.email, {
@@ -94,7 +97,7 @@ export async function inviteManagedUserAction(input: unknown) {
   }
 
   try {
-    await upsertProfileAndRole(data.user.id, payload.full_name, payload.role);
+    await upsertProfileAndRole(data.user.id, payload.full_name, payload.role, organizationId);
   } catch (caughtError) {
     return {
       ok: false as const,
@@ -112,6 +115,7 @@ export async function createManagedUserAction(input: unknown) {
   await requireAdminRole(["super_admin", "hr_admin"]);
 
   const payload = createUserSchema.parse(input);
+  const organizationId = await getCurrentUserOrganizationId();
   const admin = createAdminClient();
 
   const { data, error } = await admin.auth.admin.createUser({
@@ -128,7 +132,7 @@ export async function createManagedUserAction(input: unknown) {
   }
 
   try {
-    await upsertProfileAndRole(data.user.id, payload.full_name, payload.role);
+    await upsertProfileAndRole(data.user.id, payload.full_name, payload.role, organizationId);
   } catch (caughtError) {
     return {
       ok: false as const,

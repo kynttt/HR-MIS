@@ -1,3 +1,4 @@
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { createClient } from "@/lib/supabase/server";
 import type { EmploymentStatus, RoleType } from "@/types/domain";
 
@@ -65,7 +66,6 @@ export type EmployeeDetails = {
   documents: Array<{ id: string; document_type: string; original_file_name: string | null; file_path: string; file_url: string; is_image: boolean }>;
 };
 
-
 function isAbsoluteUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
@@ -74,12 +74,15 @@ function isImagePath(value: string): boolean {
   const normalized = value.split("?")[0].toLowerCase();
   return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"].some((ext) => normalized.endsWith(ext));
 }
+
 export async function listEmployees(filters: EmployeeFilters): Promise<EmployeeListItem[]> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
 
   let query = supabase
     .from("employees")
     .select("id, employee_id_code, first_name, last_name, email, role_type, employment_status, is_active, departments(department_name)")
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: false });
 
   if (filters.roleType) {
@@ -130,10 +133,13 @@ export async function listEmployees(filters: EmployeeFilters): Promise<EmployeeL
 
 export async function getEmployeeDetails(employeeId: string): Promise<EmployeeDetails> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
+
   const { data: employee, error: employeeError } = await supabase
     .from("employees")
     .select("*, departments(*), faculty_profiles(*), staff_profiles(*), employee_documents(*)")
     .eq("id", employeeId)
+    .eq("organization_id", organizationId)
     .single();
 
   if (employeeError || !employee) {
@@ -207,12 +213,14 @@ export async function listEmployeesPaginated(
   pageSize: number
 ): Promise<PaginatedEmployeesResult> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
   let query = supabase
     .from("employees")
     .select("id, employee_id_code, first_name, last_name, email, role_type, employment_status, is_active, departments(department_name)", { count: "exact" })
+    .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .range(from, to);
 
@@ -263,8 +271,3 @@ export async function listEmployeesPaginated(
 
   return { items, total: count ?? 0 };
 }
-
-
-
-
-
