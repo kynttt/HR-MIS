@@ -78,41 +78,65 @@ export default async function JobsPage({ searchParams }: Props) {
     <div className="space-y-6">
       <JobsPageToast created={created} updated={updated} />
 
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-2xl font-semibold text-[#061b31]">
-          <Briefcase className="h-6 w-6" />
-          Job Openings
-        </h2>
-        <Button asChild>
-          <Link href="/jobs/create">
-            <Plus className="mr-1 h-4 w-4" />
-            Create Job Opening
-          </Link>
-        </Button>
-      </div>
+      <section className="rounded-xl border border-[#d6d9fc] bg-gradient-to-br from-white via-[#f8f9ff] to-[#eef2ff] p-5 shadow-[0_18px_45px_-34px_rgba(83,58,253,0.35)] lg:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="code-label text-[11px] uppercase tracking-[0.12em] text-[#64748d]">Recruitment</p>
+            <h2 className="mt-1 flex items-center gap-2 text-2xl font-semibold tracking-tight text-[#061b31]">
+              <Briefcase className="h-6 w-6" />
+              Job Openings
+            </h2>
+            <p className="mt-1 text-sm text-[#273951]">Manage active and closed positions across departments.</p>
+          </div>
 
-      <form className="grid gap-2 rounded-lg border border-[#e5edf5] bg-[#f6f9fc] p-4 md:grid-cols-4">
-        <Input defaultValue={q} name="q" placeholder="Search by title" />
-        <Select defaultValue={status ?? ""} name="status">
-          <option value="">All job statuses</option>
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-        </Select>
-        <Select defaultValue={departmentId ?? ""} name="departmentId">
-          <option value="">All departments</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>{d.department_name}</option>
-          ))}
-        </Select>
-        <Select defaultValue={roleType ?? ""} name="roleType">
-          <option value="">All role types</option>
-          <option value="faculty">Faculty</option>
-          <option value="staff">Staff</option>
-        </Select>
-        <Button type="submit" size="sm">Apply</Button>
+          <div className="flex items-center gap-3">
+            <span className="rounded-md border border-[#d6d9fc] bg-white px-3 py-2 text-sm text-[#273951]">{total} total records</span>
+            <Button asChild>
+              <Link href="/jobs/create">
+                <Plus className="mr-1 h-4 w-4" />
+                Create Job Opening
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <form className="grid gap-3 rounded-xl border border-[#e5edf5] bg-white p-4 shadow-[0_15px_32px_-34px_rgba(6,27,49,0.55)] lg:grid-cols-12 lg:p-5">
+        <div className="lg:col-span-3">
+          <Input defaultValue={q} name="q" placeholder="Search by title" />
+        </div>
+        <div className="lg:col-span-3">
+          <Select defaultValue={status ?? ""} name="status">
+            <option value="">All job statuses</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </Select>
+        </div>
+        <div className="lg:col-span-3">
+          <Select defaultValue={departmentId ?? ""} name="departmentId">
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.department_name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="lg:col-span-2">
+          <Select defaultValue={roleType ?? ""} name="roleType">
+            <option value="">All role types</option>
+            <option value="faculty">Faculty</option>
+            <option value="staff">Staff</option>
+          </Select>
+        </div>
+        <div className="lg:col-span-1">
+          <Button className="w-full" type="submit" size="sm">
+            Apply
+          </Button>
+        </div>
       </form>
 
-      <div className="overflow-hidden rounded-lg border border-[#e5edf5] bg-[#f6f9fc]">
+      <div className="overflow-hidden rounded-xl border border-[#e5edf5] bg-white shadow-[0_20px_40px_-38px_rgba(6,27,49,0.65)]">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
@@ -129,7 +153,7 @@ export default async function JobsPage({ searchParams }: Props) {
             <TableBody>
               {jobs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-6 text-center text-[#64748d]">
+                  <TableCell colSpan={7} className="py-10 text-center text-[#64748d]">
                     No job openings found.
                   </TableCell>
                 </TableRow>
@@ -141,13 +165,9 @@ export default async function JobsPage({ searchParams }: Props) {
                     <TableCell className="capitalize text-[#64748d]">{job.role_type}</TableCell>
                     <TableCell className="capitalize text-[#64748d]">{job.employment_type.replace("_", " ")}</TableCell>
                     <TableCell>
-                      <Badge variant={job.status === "open" ? "success" : "muted"}>
-                        {job.status}
-                      </Badge>
+                      <Badge variant={job.status === "open" ? "success" : "muted"}>{job.status}</Badge>
                     </TableCell>
-                    <TableCell className="text-[#64748d]">
-                      {format(new Date(job.created_at), "MMM d, yyyy")}
-                    </TableCell>
+                    <TableCell className="text-[#64748d]">{format(new Date(job.created_at), "MMM d, yyyy")}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
@@ -173,4 +193,3 @@ export default async function JobsPage({ searchParams }: Props) {
     </div>
   );
 }
-

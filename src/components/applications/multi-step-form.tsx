@@ -1,22 +1,24 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { toast } from "sonner"
-import { Input } from "@/components/ui/input"
-import { Select } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
-import { FileUpload } from "@/components/ui/file-upload"
-import { Separator } from "@/components/ui/separator"
-import { cn } from "@/lib/utils/cn"
-import { submitApplicationAction } from "@/features/applications/actions"
+import { zodResolver } from "@hookform/resolvers/zod";
+import { CheckCircle2, FileText, UserRound } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { toast } from "sonner";
+import { z } from "zod";
 
-const STEPS = ["Personal Information", "Documents", "Review & Submit"] as const
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { FileUpload } from "@/components/ui/file-upload";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { submitApplicationAction } from "@/features/applications/actions";
+import { cn } from "@/lib/utils/cn";
+
+const STEPS = ["Personal Information", "Documents", "Review and Submit"] as const;
 
 const personalInfoSchema = z.object({
   job_opening_id: z.string().uuid(),
@@ -26,203 +28,204 @@ const personalInfoSchema = z.object({
   suffix: z.string().optional(),
   email: z.string().email("Invalid email address"),
   phone: z.string().optional(),
-  address: z.string().optional(),
-})
+  address: z.string().optional()
+});
 
-type PersonalInfo = z.infer<typeof personalInfoSchema>
+type PersonalInfo = z.infer<typeof personalInfoSchema>;
+
+type JobOption = { id: string; job_title: string; department_name: string | null; role_type: string };
 
 interface MultiStepApplyFormProps {
-  jobs: { id: string; job_title: string; department_name: string | null; role_type: string }[]
-  isSuccess?: boolean
-  errorMessage?: string | null
+  jobs: JobOption[];
+  isSuccess?: boolean;
+  errorMessage?: string | null;
+  fixedJobId?: string;
+  returnPath?: string;
+  lockedEmail?: string;
 }
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="flex items-center justify-center gap-0 mb-8">
-      {STEPS.map((step, idx) => (
-        <div key={step} className="flex items-center">
-          <div className="flex flex-col items-center gap-1">
-            <div
-              className={cn(
-                "h-8 w-8 rounded-full flex items-center justify-center text-sm font-semibold transition-colors",
-                idx < current
-                  ? "bg-[#533afd] text-white"
-                  : idx === current
-                  ? "bg-[#533afd]/30 text-[#533afd] border-2 border-[#533afd]"
-                  : "bg-[#e5edf5] text-[#64748d]"
-              )}
-            >
-              {idx < current ? "✓" : idx + 1}
+    <div className="mb-8 grid gap-3 md:grid-cols-3">
+      {STEPS.map((step, idx) => {
+        const Icon = idx === 0 ? UserRound : idx === 1 ? FileText : CheckCircle2;
+        const isDone = idx < current;
+        const isCurrent = idx === current;
+
+        return (
+          <div
+            key={step}
+            className={cn(
+              "rounded-lg border px-4 py-3 transition-colors",
+              isDone || isCurrent ? "border-[#d6d9fc] bg-[#f4f6ff]" : "border-[#e5edf5] bg-white"
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-md text-xs",
+                  isDone ? "bg-[#533afd] text-white" : isCurrent ? "border border-[#533afd] bg-[#eef2ff] text-[#533afd]" : "bg-[#eef2f7] text-[#64748d]"
+                )}
+              >
+                {isDone ? "OK" : idx + 1}
+              </div>
+              <Icon className={cn("h-4 w-4", isDone || isCurrent ? "text-[#533afd]" : "text-[#64748d]")} />
+              <p className={cn("text-sm", isDone || isCurrent ? "text-[#061b31]" : "text-[#64748d]")}>{step}</p>
             </div>
-            <span className={cn("text-xs", idx === current ? "text-[#061b31]" : "text-[#64748d]")}>
-              {step}
-            </span>
           </div>
-          {idx < STEPS.length - 1 && (
-            <div className={cn("h-[2px] w-12 mx-1", idx < current ? "bg-[#533afd]" : "bg-[#e5edf5]")} />
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
-  )
+  );
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1 text-xs text-rose-500">{message}</p>;
 }
 
 function PersonalInfoStep({
   jobs,
   onNext,
   defaultValues,
+  fixedJobId,
+  lockedEmail
 }: {
-  jobs: MultiStepApplyFormProps["jobs"]
-  onNext: (data: PersonalInfo) => void
-  defaultValues?: Partial<PersonalInfo>
+  jobs: JobOption[];
+  onNext: (data: PersonalInfo) => void;
+  defaultValues?: Partial<PersonalInfo>;
+  fixedJobId?: string;
+  lockedEmail?: string;
 }) {
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors }
   } = useForm<PersonalInfo>({
     resolver: zodResolver(personalInfoSchema),
-    defaultValues,
-  })
+    defaultValues: {
+      ...defaultValues,
+      job_opening_id: defaultValues?.job_opening_id ?? fixedJobId ?? "",
+      email: defaultValues?.email ?? lockedEmail ?? ""
+    }
+  });
+
+  const selectedJob = fixedJobId ? jobs.find((job) => job.id === fixedJobId) : null;
 
   return (
-    <form onSubmit={handleSubmit(onNext)} className="space-y-4">
-      <div>
-        <Label required>Job Opening</Label>
-        <Select {...register("job_opening_id")}>
-          <option value="">Select a position...</option>
-          {jobs.map((job) => (
-            <option key={job.id} value={job.id}>
-              {job.job_title} — {job.department_name} ({job.role_type})
-            </option>
-          ))}
-        </Select>
-        {errors.job_opening_id && (
-          <p className="mt-1 text-xs text-rose-400">{errors.job_opening_id.message}</p>
-        )}
-      </div>
+    <Card className="rounded-xl border border-[#e5edf5] bg-white p-5 shadow-[0_18px_34px_-34px_rgba(6,27,49,0.65)] lg:p-6">
+      <form onSubmit={handleSubmit(onNext)} className="space-y-5">
+        <div className="grid gap-5 md:grid-cols-12">
+          <div className="md:col-span-12">
+            <Label required>Job Opening</Label>
+            {selectedJob ? (
+              <>
+                <Input value={`${selectedJob.job_title} - ${selectedJob.department_name ?? "No department"} (${selectedJob.role_type})`} readOnly />
+                <input type="hidden" value={selectedJob.id} {...register("job_opening_id")} />
+              </>
+            ) : (
+              <Select {...register("job_opening_id")}>
+                <option value="">Select a position...</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.job_title} - {job.department_name ?? "No department"} ({job.role_type})
+                  </option>
+                ))}
+              </Select>
+            )}
+            <FieldError message={errors.job_opening_id?.message} />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label required>First Name</Label>
-          <Input {...register("first_name")} placeholder="Maria" />
-          {errors.first_name && (
-            <p className="mt-1 text-xs text-rose-400">{errors.first_name.message}</p>
-          )}
-        </div>
-        <div>
-          <Label required>Last Name</Label>
-          <Input {...register("last_name")} placeholder="Santos" />
-          {errors.last_name && (
-            <p className="mt-1 text-xs text-rose-400">{errors.last_name.message}</p>
-          )}
-        </div>
-      </div>
+          <div className="md:col-span-4">
+            <Label required>First Name</Label>
+            <Input {...register("first_name")} placeholder="Maria" />
+            <FieldError message={errors.first_name?.message} />
+          </div>
+          <div className="md:col-span-4">
+            <Label>Middle Name</Label>
+            <Input {...register("middle_name")} placeholder="Garcia" />
+          </div>
+          <div className="md:col-span-4">
+            <Label required>Last Name</Label>
+            <Input {...register("last_name")} placeholder="Santos" />
+            <FieldError message={errors.last_name?.message} />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div>
-          <Label>Middle Name</Label>
-          <Input {...register("middle_name")} placeholder="Garcia" />
-        </div>
-        <div>
-          <Label>Suffix</Label>
-          <Input {...register("suffix")} placeholder="Jr., Sr., III" />
-        </div>
-        <div>
-          <Label required>Email</Label>
-          <Input {...register("email")} type="email" placeholder="maria.santos@university.edu" />
-          {errors.email && (
-            <p className="mt-1 text-xs text-rose-400">{errors.email.message}</p>
-          )}
-        </div>
-      </div>
+          <div className="md:col-span-3">
+            <Label>Suffix</Label>
+            <Input {...register("suffix")} placeholder="Jr, Sr, III" />
+          </div>
+          <div className="md:col-span-5">
+            <Label required>Email</Label>
+            <Input {...register("email")} type="email" placeholder="maria@example.com" readOnly={Boolean(lockedEmail)} />
+            {lockedEmail ? <p className="mt-1 text-xs text-[#64748d]">Using your signed-in account email.</p> : null}
+            <FieldError message={errors.email?.message} />
+          </div>
+          <div className="md:col-span-4">
+            <Label>Phone</Label>
+            <Input {...register("phone")} type="tel" placeholder="+63 912 345 6789" />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label>Phone</Label>
-          <Input {...register("phone")} type="tel" placeholder="+63 912 345 6789" />
+          <div className="md:col-span-12">
+            <Label>Address</Label>
+            <Textarea {...register("address")} placeholder="123 University Ave" />
+          </div>
         </div>
-      </div>
 
-      <div>
-        <Label>Address</Label>
-        <Textarea {...register("address")} placeholder="123 University Ave, Quezon City, Philippines" />
-      </div>
-
-      <div className="flex justify-end pt-2">
-        <Button type="submit">Next: Upload Documents →</Button>
-      </div>
-    </form>
-  )
+        <div className="flex justify-end pt-1">
+          <Button type="submit">Next: Upload Documents</Button>
+        </div>
+      </form>
+    </Card>
+  );
 }
 
 function DocumentsStep({
   onNext,
   onBack,
   files,
-  onFilesChange,
+  onFilesChange
 }: {
-  onNext: () => void
-  onBack: () => void
-  files: Record<string, File[]>
-  onFilesChange: (name: string, files: File[]) => void
+  onNext: () => void;
+  onBack: () => void;
+  files: Record<string, File[]>;
+  onFilesChange: (name: string, files: File[]) => void;
 }) {
+  const documentCards: Array<{ key: string; label: string; accept: string }> = [
+    { key: "resume", label: "Resume or CV", accept: ".pdf,.doc,.docx" },
+    { key: "diploma", label: "Diploma", accept: ".pdf,.doc,.docx" },
+    { key: "tor", label: "Transcript of Records", accept: ".pdf,.doc,.docx" },
+    { key: "certificates", label: "Certificates or Training", accept: ".pdf,.doc,.docx,.zip" }
+  ];
+
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-[#64748d]">
-        Upload supporting documents. All fields are optional but recommended.
-      </p>
+    <Card className="rounded-xl border border-[#e5edf5] bg-white p-5 shadow-[0_18px_34px_-34px_rgba(6,27,49,0.65)] lg:p-6">
+      <div className="space-y-5">
+        <p className="text-sm text-[#64748d]">Upload your supporting documents. You can continue even if some files are not available yet.</p>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label>Resume / CV</Label>
-          <FileUpload
-            accept=".pdf,.doc,.docx"
-            onFilesChange={(f) => onFilesChange("resume", f)}
-          />
-          {files.resume.length > 0 && (
-            <p className="mt-1 text-xs text-[#533afd]">{files.resume[0].name}</p>
-          )}
+        <div className="grid gap-4 md:grid-cols-2">
+          {documentCards.map((item) => (
+            <div key={item.key} className="rounded-lg border border-[#e5edf5] bg-[#f8fafe] p-4">
+              <Label>{item.label}</Label>
+              <div className="mt-2">
+                <FileUpload accept={item.accept} onFilesChange={(f) => onFilesChange(item.key, f)} />
+              </div>
+              {files[item.key]?.[0] ? <p className="mt-2 text-xs text-[#533afd]">{files[item.key][0].name}</p> : null}
+            </div>
+          ))}
         </div>
-        <div>
-          <Label>Diploma</Label>
-          <FileUpload
-            accept=".pdf,.doc,.docx"
-            onFilesChange={(f) => onFilesChange("diploma", f)}
-          />
-          {files.diploma.length > 0 && (
-            <p className="mt-1 text-xs text-[#533afd]">{files.diploma[0].name}</p>
-          )}
-        </div>
-        <div>
-          <Label>Transcript of Records (TOR)</Label>
-          <FileUpload
-            accept=".pdf,.doc,.docx"
-            onFilesChange={(f) => onFilesChange("tor", f)}
-          />
-          {files.tor.length > 0 && (
-            <p className="mt-1 text-xs text-[#533afd]">{files.tor[0].name}</p>
-          )}
-        </div>
-        <div>
-          <Label>Certificates / Training</Label>
-          <FileUpload
-            accept=".pdf,.doc,.docx,.zip"
-            onFilesChange={(f) => onFilesChange("certificates", f)}
-          />
-          {files.certificates.length > 0 && (
-            <p className="mt-1 text-xs text-[#533afd]">{files.certificates[0].name}</p>
-          )}
+
+        <div className="flex justify-between pt-1">
+          <Button variant="secondary" onClick={onBack} type="button">
+            Back
+          </Button>
+          <Button onClick={onNext} type="button">
+            Next: Review
+          </Button>
         </div>
       </div>
-
-      <div className="flex justify-between pt-4">
-        <Button variant="secondary" onClick={onBack}>← Back</Button>
-        <Button onClick={onNext}>Next: Review</Button>
-      </div>
-    </div>
-  )
+    </Card>
+  );
 }
 
 function ReviewStep({
@@ -230,167 +233,170 @@ function ReviewStep({
   jobs,
   onBack,
   onSubmit,
-  isSubmitting,
+  isSubmitting
 }: {
-  data: PersonalInfo
-  jobs: { id: string; job_title: string; department_name: string | null; role_type: string }[]
-  onBack: () => void
-  onSubmit: () => void
-  isSubmitting: boolean
+  data: PersonalInfo;
+  jobs: JobOption[];
+  onBack: () => void;
+  onSubmit: () => void;
+  isSubmitting: boolean;
 }) {
-  const selectedJob = jobs.find((j) => j.id === data.job_opening_id)
-  const fullName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ")
+  const selectedJob = jobs.find((job) => job.id === data.job_opening_id);
+  const fullName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-[#64748d]">Review your information before submitting.</p>
+    <Card className="rounded-xl border border-[#e5edf5] bg-white p-5 shadow-[0_18px_34px_-34px_rgba(6,27,49,0.65)] lg:p-6">
+      <div className="space-y-4">
+        <p className="text-sm text-[#64748d]">Review your details before final submission.</p>
 
-      <Card className="p-4 space-y-3">
-        <div>
-          <p className="text-xs text-[#64748d] uppercase tracking-wide">Position</p>
-          <p className="text-sm text-[#061b31]">
-            {selectedJob ? `${selectedJob.job_title} — ${selectedJob.department_name} (${selectedJob.role_type})` : data.job_opening_id}
-          </p>
-        </div>
-        <Separator />
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-[#e5edf5] bg-[#f8fafc] p-4">
           <div>
-            <p className="text-xs text-[#64748d]">Full Name</p>
+            <p className="text-xs uppercase tracking-wide text-[#64748d]">Position</p>
             <p className="text-sm text-[#061b31]">
-              {fullName}{data.suffix ? `, ${data.suffix}` : ""}
+              {selectedJob ? `${selectedJob.job_title} - ${selectedJob.department_name ?? "No department"} (${selectedJob.role_type})` : data.job_opening_id}
             </p>
           </div>
-          <div>
-            <p className="text-xs text-[#64748d]">Email</p>
-            <p className="text-sm text-[#061b31]">{data.email}</p>
-          </div>
-          <div>
-            <p className="text-xs text-[#64748d]">Phone</p>
-            <p className="text-sm text-[#061b31]">{data.phone || "—"}</p>
-          </div>
-          <div>
-            <p className="text-xs text-[#64748d]">Address</p>
-            <p className="text-sm text-[#061b31]">{data.address || "—"}</p>
+          <Separator className="my-3" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <p className="text-xs text-[#64748d]">Full Name</p>
+              <p className="text-sm text-[#061b31]">
+                {fullName}
+                {data.suffix ? `, ${data.suffix}` : ""}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[#64748d]">Email</p>
+              <p className="text-sm text-[#061b31]">{data.email}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#64748d]">Phone</p>
+              <p className="text-sm text-[#061b31]">{data.phone || "-"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#64748d]">Address</p>
+              <p className="text-sm text-[#061b31]">{data.address || "-"}</p>
+            </div>
           </div>
         </div>
-      </Card>
 
-      <div className="flex justify-between pt-4">
-        <Button variant="secondary" onClick={onBack} disabled={isSubmitting}>← Back</Button>
-        <Button onClick={onSubmit} disabled={isSubmitting}>
-          {isSubmitting ? "Submitting..." : "Submit Application"}
-        </Button>
+        <div className="flex justify-between pt-2">
+          <Button variant="secondary" onClick={onBack} disabled={isSubmitting} type="button">
+            Back
+          </Button>
+          <Button onClick={onSubmit} disabled={isSubmitting} type="button">
+            {isSubmitting ? "Submitting..." : "Submit Application"}
+          </Button>
+        </div>
       </div>
-    </div>
-  )
+    </Card>
+  );
 }
 
 function SuccessState() {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-      <div className="h-16 w-16 rounded-full bg-emerald-500/20 flex items-center justify-center">
-        <svg className="h-8 w-8 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-      </div>
+    <Card className="flex flex-col items-center justify-center space-y-4 rounded-xl border border-emerald-200 bg-white py-12 text-center shadow-[0_18px_34px_-34px_rgba(16,185,129,0.65)]">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">OK</div>
       <div>
-        <h3 className="text-lg font-semibold text-[#061b31]">Application Submitted!</h3>
-        <p className="mt-1 text-sm text-[#64748d]">
-          Thank you for your interest. Our HR team will review your application and contact you soon.
-        </p>
+        <h3 className="text-lg font-semibold text-[#061b31]">Application Submitted</h3>
+        <p className="mt-1 text-sm text-[#64748d]">Thank you for your interest. Our HR team will review your application and contact you soon.</p>
       </div>
-      <p className="text-xs text-[#64748d]">
-        A confirmation email has been sent to your email address.
-      </p>
-    </div>
-  )
+    </Card>
+  );
 }
 
-export function MultiStepApplyForm({ jobs, isSuccess, errorMessage }: MultiStepApplyFormProps) {
-  const [step, setStep] = useState(0)
-  const [formData, setFormData] = useState<PersonalInfo | null>(null)
+export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, returnPath, lockedEmail }: MultiStepApplyFormProps) {
+  const [step, setStep] = useState(0);
+  const [formData, setFormData] = useState<PersonalInfo | null>(null);
   const [files, setFiles] = useState<Record<string, File[]>>({
     resume: [],
     diploma: [],
     tor: [],
-    certificates: [],
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+    certificates: []
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (errorMessage || isSuccess) {
+      setIsSubmitting(false);
+    }
+  }, [errorMessage, isSuccess]);
 
   if (isSuccess) {
-    return <SuccessState />
+    return <SuccessState />;
   }
 
   const handleFilesChange = (name: string, newFiles: File[]) => {
-    setFiles((prev) => ({ ...prev, [name]: newFiles }))
-  }
+    setFiles((prev) => ({ ...prev, [name]: newFiles }));
+  };
 
   const handleSubmit = async () => {
-    if (!formData) return
-    setIsSubmitting(true)
+    if (!formData) return;
+    setIsSubmitting(true);
 
     try {
-      const formDataToSend = new FormData()
-      formDataToSend.set("job_opening_id", formData.job_opening_id)
-      formDataToSend.set("first_name", formData.first_name)
-      if (formData.middle_name) formDataToSend.set("middle_name", formData.middle_name)
-      formDataToSend.set("last_name", formData.last_name)
-      if (formData.suffix) formDataToSend.set("suffix", formData.suffix)
-      formDataToSend.set("email", formData.email)
-      if (formData.phone) formDataToSend.set("phone", formData.phone)
-      if (formData.address) formDataToSend.set("address", formData.address)
+      const formDataToSend = new FormData();
+      formDataToSend.set("job_opening_id", formData.job_opening_id);
+      formDataToSend.set("first_name", formData.first_name);
+      if (formData.middle_name) formDataToSend.set("middle_name", formData.middle_name);
+      formDataToSend.set("last_name", formData.last_name);
+      if (formData.suffix) formDataToSend.set("suffix", formData.suffix);
+      formDataToSend.set("email", formData.email);
+      if (formData.phone) formDataToSend.set("phone", formData.phone);
+      if (formData.address) formDataToSend.set("address", formData.address);
+      formDataToSend.set("return_to", returnPath ?? (fixedJobId ? `/apply/${fixedJobId}` : "/apply"));
 
       for (const [name, fileList] of Object.entries(files)) {
-        if (fileList[0]) formDataToSend.set(name, fileList[0])
+        if (fileList[0]) formDataToSend.set(name, fileList[0]);
       }
 
-      await submitApplicationAction(formDataToSend)
-    } catch {
-      toast.error("Failed to submit application. Please try again.")
-      setIsSubmitting(false)
+      await submitApplicationAction(formDataToSend);
+    } catch (error) {
+      const isRedirectControlFlow =
+        typeof error === "object" &&
+        error !== null &&
+        "digest" in error &&
+        typeof (error as { digest?: unknown }).digest === "string" &&
+        (error as { digest: string }).digest.startsWith("NEXT_REDIRECT");
+
+      if (isRedirectControlFlow) {
+        throw error;
+      }
+
+      toast.error("Failed to submit application. Please try again.");
+      setIsSubmitting(false);
     }
-  }
+  };
 
   return (
     <div>
       <StepIndicator current={step} />
 
-      {errorMessage && (
-        <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 p-3">
-          <p className="text-sm text-rose-400">{errorMessage}</p>
+      {errorMessage ? (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3">
+          <p className="text-sm text-rose-700">{errorMessage}</p>
         </div>
-      )}
+      ) : null}
 
-      {step === 0 && (
+      {step === 0 ? (
         <PersonalInfoStep
           jobs={jobs}
+          fixedJobId={fixedJobId}
           onNext={(data) => {
-            setFormData(data)
-            setStep(1)
+            setFormData(data);
+            setStep(1);
           }}
           defaultValues={formData ?? undefined}
+          lockedEmail={lockedEmail}
         />
-      )}
+      ) : null}
 
-      {step === 1 && (
-        <DocumentsStep
-          onNext={() => setStep(2)}
-          onBack={() => setStep(0)}
-          files={files}
-          onFilesChange={handleFilesChange}
-        />
-      )}
+      {step === 1 ? <DocumentsStep onNext={() => setStep(2)} onBack={() => setStep(0)} files={files} onFilesChange={handleFilesChange} /> : null}
 
-      {step === 2 && formData && (
-        <ReviewStep
-          data={formData}
-          jobs={jobs}
-          onBack={() => setStep(1)}
-          onSubmit={handleSubmit}
-          isSubmitting={isSubmitting}
-        />
-      )}
+      {step === 2 && formData ? (
+        <ReviewStep data={formData} jobs={jobs} onBack={() => setStep(1)} onSubmit={handleSubmit} isSubmitting={isSubmitting} />
+      ) : null}
     </div>
-  )
+  );
 }
 

@@ -1,5 +1,14 @@
 import { redirect } from "next/navigation";
 
-export default function HomePage() {
-  redirect("/dashboard");
+import { getAuthenticatedHomePath, getCurrentUser } from "@/features/auth/service";
+
+export default async function HomePage() {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect("/apply");
+  }
+
+  const destination = await getAuthenticatedHomePath();
+  redirect(destination);
 }

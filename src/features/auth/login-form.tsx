@@ -1,7 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
+import type { Route } from "next";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 
@@ -13,6 +14,7 @@ import { type LoginInput, loginSchema } from "./schema";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
@@ -41,7 +43,10 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/dashboard");
+    const nextPath = searchParams.get("next");
+    const redirectPath = nextPath && nextPath.startsWith("/") ? nextPath : "/profile";
+
+    router.push(redirectPath as Route);
     router.refresh();
   });
 
@@ -101,4 +106,5 @@ export function LoginForm() {
     </form>
   );
 }
+
 

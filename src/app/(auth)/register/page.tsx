@@ -3,7 +3,26 @@ import { UserPlus2 } from "lucide-react";
 
 import { RegisterForm } from "@/features/auth/register-form";
 
-export default function RegisterPage() {
+type Props = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getSafeNextPath(value: string | string[] | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  if (!value.startsWith("/") || value.startsWith("/login") || value.startsWith("/register")) {
+    return undefined;
+  }
+
+  return value;
+}
+
+export default async function RegisterPage({ searchParams }: Props) {
+  const query = await searchParams;
+  const nextPath = getSafeNextPath(query.next);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#f6f9fc] p-4">
       <div className="w-full max-w-md rounded-2xl border border-[#e5edf5] bg-[#ffffff] p-6 sm:p-8">
@@ -12,13 +31,13 @@ export default function RegisterPage() {
           Registration
         </div>
         <h1 className="mt-3 font-display text-3xl font-medium text-[#061b31]">Create HRMIS Account</h1>
-        <p className="mt-2 text-sm text-[#64748d]">Register your account. Admin approval and role assignment may be required.</p>
+        <p className="mt-2 text-sm text-[#64748d]">Create your applicant account to submit applications and track your job submissions.</p>
         <div className="mt-6">
           <RegisterForm />
         </div>
         <p className="mt-4 text-center text-sm text-[#64748d]">
           Already have access?{" "}
-          <Link className="text-brand-700 transition-colors hover:text-brand-500" href="/login">
+          <Link className="text-brand-700 transition-colors hover:text-brand-500" href={nextPath ? { pathname: "/login", query: { next: nextPath } } : "/login"}>
             Sign in
           </Link>
         </p>

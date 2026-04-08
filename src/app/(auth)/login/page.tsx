@@ -3,13 +3,32 @@ import { Database, FileCheck2, Shield } from "lucide-react";
 
 import { LoginForm } from "@/features/auth/login-form";
 
+type Props = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
 const highlights = [
   { icon: Database, label: "Centralized recruitment records" },
   { icon: FileCheck2, label: "End-to-end applicant pipeline" },
   { icon: Shield, label: "Role-based access for admins" }
 ];
 
-export default function LoginPage() {
+function getSafeNextPath(value: string | string[] | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  if (!value.startsWith("/") || value.startsWith("/login") || value.startsWith("/register")) {
+    return undefined;
+  }
+
+  return value;
+}
+
+export default async function LoginPage({ searchParams }: Props) {
+  const query = await searchParams;
+  const nextPath = getSafeNextPath(query.next);
+
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[#f6f9fc] p-4 lg:grid-cols-[1.05fr_0.95fr] lg:p-8">
       <section className="hidden rounded-3xl border border-[#e5edf5] bg-gradient-to-b from-[#f8fbff] to-[#f8fbff] p-10 lg:flex lg:flex-col lg:justify-between">
@@ -32,15 +51,15 @@ export default function LoginPage() {
 
       <section className="flex items-center justify-center lg:justify-end">
         <div className="w-full max-w-md rounded-2xl border border-[#e5edf5] bg-[#ffffff] p-6 sm:p-8">
-          <p className="code-label text-xs text-[#64748d]">Admin Portal</p>
-          <h2 className="mt-2 font-display text-3xl font-medium text-[#061b31]">Sign in to HRMIS</h2>
-          <p className="mt-2 text-sm text-[#64748d]">Use your university admin account credentials.</p>
+          <p className="code-label text-xs text-[#64748d]">Account Access</p>
+          <h2 className="mt-2 font-display text-3xl font-medium text-[#061b31]">Sign in to continue</h2>
+          <p className="mt-2 text-sm text-[#64748d]">Use your account credentials to continue with applications or admin work.</p>
           <div className="mt-6">
             <LoginForm />
           </div>
           <p className="mt-4 text-center text-sm text-[#64748d]">
             Need an account?{" "}
-            <Link className="text-brand-700 transition-colors hover:text-brand-500" href="/register">
+            <Link className="text-brand-700 transition-colors hover:text-brand-500" href={nextPath ? { pathname: "/register", query: { next: nextPath } } : "/register"}>
               Create account
             </Link>
           </p>
@@ -49,5 +68,4 @@ export default function LoginPage() {
     </div>
   );
 }
-
 

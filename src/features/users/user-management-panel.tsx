@@ -74,6 +74,7 @@ export function UserManagementPanel({ users }: { users: ManagedUser[] }) {
             <option value="super_admin">super_admin</option>
             <option value="hr_admin">hr_admin</option>
             <option value="department_admin">department_admin</option>
+            <option value="user">user</option>
           </Select>
         </div>
         {inviteMessage ? <p className="text-sm text-[#273951]">{inviteMessage}</p> : null}
@@ -91,6 +92,7 @@ export function UserManagementPanel({ users }: { users: ManagedUser[] }) {
             <option value="super_admin">super_admin</option>
             <option value="hr_admin">hr_admin</option>
             <option value="department_admin">department_admin</option>
+            <option value="user">user</option>
           </Select>
         </div>
         {createMessage ? <p className="text-sm text-[#273951]">{createMessage}</p> : null}
@@ -127,7 +129,7 @@ export function UserManagementPanel({ users }: { users: ManagedUser[] }) {
 }
 
 function UserRow({ user }: { user: ManagedUser }) {
-  const [role, setRole] = useState<"super_admin" | "hr_admin" | "department_admin">(user.role ?? "department_admin");
+  const [role, setRole] = useState<"super_admin" | "hr_admin" | "department_admin" | "user">(user.role ?? "user");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -136,10 +138,11 @@ function UserRow({ user }: { user: ManagedUser }) {
       <td className="px-3 py-2">{user.full_name ?? "-"}</td>
       <td className="px-3 py-2">{user.email}</td>
       <td className="px-3 py-2">
-        <Select className="h-8" value={role} onChange={(event) => setRole(event.target.value as "super_admin" | "hr_admin" | "department_admin") }>
+        <Select className="h-8" value={role} onChange={(event) => setRole(event.target.value as "super_admin" | "hr_admin" | "department_admin" | "user") }>
           <option value="super_admin">super_admin</option>
           <option value="hr_admin">hr_admin</option>
           <option value="department_admin">department_admin</option>
+          <option value="user">user</option>
         </Select>
       </td>
       <td className="px-3 py-2">{new Date(user.created_at).toLocaleDateString()}</td>

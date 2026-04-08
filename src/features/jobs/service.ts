@@ -1,5 +1,6 @@
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { createClient } from "@/lib/supabase/server";
-import type { RoleType } from "@/types/domain";
+import type { EmploymentType, RoleType } from "@/types/domain";
 
 export type JobOpeningListItem = {
   id: string;
@@ -17,6 +18,21 @@ export type OpenJobListItem = {
   role_type: "faculty" | "staff";
   employment_type: "full_time" | "part_time" | "contractual" | "job_order";
   department_name: string | null;
+  organization_name: string;
+  organization_slug: string;
+};
+
+export type PublicJobOpeningDetails = {
+  id: string;
+  job_title: string;
+  role_type: "faculty" | "staff";
+  employment_type: "full_time" | "part_time" | "contractual" | "job_order";
+  description: string | null;
+  qualifications: string | null;
+  department_name: string | null;
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
 };
 
 export type JobOpeningEditDetails = {
@@ -49,9 +65,12 @@ export type PaginatedJobOpeningsResult = {
 
 export async function listJobOpenings(filters?: JobOpeningFilters): Promise<JobOpeningListItem[]> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
+
   let query = supabase
     .from("job_openings")
     .select("id, job_title, role_type, employment_type, status, created_at, departments(department_name)")
+    .eq("organization_id", organizationId)
     .order(filters?.sort === "title" ? "job_title" : "created_at", { ascending: filters?.order === "asc" });
 
   if (filters?.status) {
@@ -89,11 +108,13 @@ export async function listJobOpenings(filters?: JobOpeningFilters): Promise<JobO
 
 export async function getJobOpeningDetails(id: string): Promise<JobOpeningEditDetails> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
 
   const { data, error } = await supabase
     .from("job_openings")
     .select("id, job_title, department_id, role_type, employment_type, description, qualifications, status")
     .eq("id", id)
+    .eq("organization_id", organizationId)
     .single();
 
   if (error || !data) {
@@ -112,28 +133,95 @@ export async function getJobOpeningDetails(id: string): Promise<JobOpeningEditDe
   };
 }
 
-export async function listOpenJobOpenings(): Promise<OpenJobListItem[]> {
+export async function listOpenJobOpenings(options?: {
+  organizationId?: string;
+  q?: string;
+  roleType?: RoleType;
+  employmentType?: EmploymentType;
+}): Promise<OpenJobListItem[]> {
   const supabase = await createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("job_openings")
-    .select("id, job_title, role_type, employment_type, departments(department_name)")
+    .select("id, job_title, role_type, employment_type, departments(department_name), organizations(name, slug, is_active)")
     .eq("status", "open")
     .order("created_at", { ascending: false });
+
+  if (options?.organizationId) {
+    query = query.eq("organization_id", options.organizationId);
+  }
+  if (options?.q) {
+    query = query.ilike("job_title", `%${options.q}%`);
+  }
+  if (options?.roleType) {
+    query = query.eq("role_type", options.roleType);
+  }
+  if (options?.employmentType) {
+    query = query.eq("employment_type", options.employmentType);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(error.message);
   }
 
-  return (data ?? []).map((item) => {
-    const department = Array.isArray(item.departments) ? item.departments[0] : item.departments;
-    return {
-      id: item.id,
-      job_title: item.job_title,
-      role_type: item.role_type,
-      employment_type: item.employment_type,
-      department_name: department?.department_name ?? null
-    };
-  });
+  const items = (data ?? [])
+    .map((item) => {
+      const department = Array.isArray(item.departments) ? item.departments[0] : item.departments;
+      const organization = Array.isArray(item.organizations) ? item.organizations[0] : item.organizations;
+
+      if (!organization?.is_active || !organization.name || !organization.slug) {
+        return null;
+      }
+
+      return {
+        id: item.id,
+        job_title: item.job_title,
+        role_type: item.role_type,
+        employment_type: item.employment_type,
+        department_name: department?.department_name ?? null,
+        organization_name: organization.name,
+        organization_slug: organization.slug
+      };
+    })
+    .filter((item): item is OpenJobListItem => item !== null);
+
+  return items;
+}
+
+export async function getPublicJobOpeningDetails(jobId: string): Promise<PublicJobOpeningDetails> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("job_openings")
+    .select("id, job_title, role_type, employment_type, description, qualifications, organization_id, departments(department_name), organizations(name, slug, is_active)")
+    .eq("id", jobId)
+    .eq("status", "open")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Job opening not found.");
+  }
+
+  const department = Array.isArray(data.departments) ? data.departments[0] : data.departments;
+  const organization = Array.isArray(data.organizations) ? data.organizations[0] : data.organizations;
+
+  if (!organization?.is_active || !organization.name || !organization.slug) {
+    throw new Error("Job opening not found.");
+  }
+
+  return {
+    id: data.id,
+    job_title: data.job_title,
+    role_type: data.role_type,
+    employment_type: data.employment_type,
+    description: data.description,
+    qualifications: data.qualifications,
+    department_name: department?.department_name ?? null,
+    organization_id: data.organization_id,
+    organization_name: organization.name,
+    organization_slug: organization.slug
+  };
 }
 
 export async function listJobOpeningsPaginated(
@@ -142,12 +230,14 @@ export async function listJobOpeningsPaginated(
   pageSize: number
 ): Promise<PaginatedJobOpeningsResult> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
   let query = supabase
     .from("job_openings")
     .select("id, job_title, role_type, employment_type, status, created_at, departments(department_name)", { count: "exact" })
+    .eq("organization_id", organizationId)
     .order(filters.sort === "title" ? "job_title" : "created_at", { ascending: filters.order === "asc" })
     .range(from, to);
 
@@ -185,9 +275,3 @@ export async function listJobOpeningsPaginated(
 
   return { items, total: count ?? 0 };
 }
-
-
-
-
-
-

@@ -1,3 +1,4 @@
+import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { createClient } from "@/lib/supabase/server";
 import type { ApplicationStatus, RoleType } from "@/types/domain";
 
@@ -64,6 +65,7 @@ function isImagePath(value: string): boolean {
 
 export async function listApplications(filters: ApplicationFilters): Promise<ApplicationListItem[]> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
 
   const keyword = filters.q?.trim() ?? "";
   const applicantJoin = keyword ? "applicants!inner(first_name, last_name, email)" : "applicants(first_name, last_name, email)";
@@ -74,9 +76,8 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
 
   let query = supabase
     .from("applications")
-    .select(
-      `id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}`
-    )
+    .select(`id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}`)
+    .eq("organization_id", organizationId)
     .order("submitted_at", { ascending: false });
 
   if (filters.status) {
@@ -137,13 +138,13 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
 
 export async function getApplicationDetails(applicationId: string): Promise<ApplicationDetails> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
 
   const { data: application, error: applicationError } = await supabase
     .from("applications")
-    .select(
-      "id, status, submitted_at, converted_employee_id, applicants(*), job_openings(*, departments(*)), application_documents(*), application_notes(*), application_status_history(*)"
-    )
+    .select("id, status, submitted_at, converted_employee_id, applicants(*), job_openings(*, departments(*)), application_documents(*), application_notes(*), application_status_history(*)")
     .eq("id", applicationId)
+    .eq("organization_id", organizationId)
     .single();
 
   if (applicationError || !application) {
@@ -200,6 +201,7 @@ export async function listApplicationsPaginated(
   pageSize: number
 ): Promise<PaginatedApplicationsResult> {
   const supabase = await createClient();
+  const organizationId = await getCurrentUserOrganizationId();
 
   const keyword = filters.q?.trim() ?? "";
   const applicantJoin = keyword ? "applicants!inner(first_name, last_name, email)" : "applicants(first_name, last_name, email)";
@@ -214,6 +216,7 @@ export async function listApplicationsPaginated(
   let query = supabase
     .from("applications")
     .select(`id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}`, { count: "exact" })
+    .eq("organization_id", organizationId)
     .order("submitted_at", { ascending: false })
     .range(from, to);
 
@@ -274,7 +277,3 @@ export async function listApplicationsPaginated(
 
   return { items, total: count ?? 0 };
 }
-
-
-
-
