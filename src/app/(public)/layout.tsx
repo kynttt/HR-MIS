@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { type ReactNode } from "react";
-import { Briefcase, Building2, LayoutDashboard, UserRound } from "lucide-react";
+import { Briefcase, Building2, FileText, LayoutDashboard, UserRound } from "lucide-react";
 
 import { signOutAction } from "@/features/auth/actions";
 import { getCurrentUser, getCurrentUserRole } from "@/features/auth/service";
@@ -36,6 +36,15 @@ export default async function PublicLayout({ children }: { children: ReactNode }
 
             {user ? (
               <>
+                {!isAdmin ? (
+                  <Link
+                    className="inline-flex items-center gap-1 rounded-md border border-[#d6d9fc] bg-white px-3 py-2 text-sm font-medium text-[#273951] transition-colors hover:bg-[#f4f7ff]"
+                    href="/profile/applications"
+                  >
+                    <FileText className="h-4 w-4" />
+                    My Applications
+                  </Link>
+                ) : null}
                 <Link
                   className="inline-flex items-center gap-1 rounded-md border border-[#d6d9fc] bg-white px-3 py-2 text-sm font-medium text-[#273951] transition-colors hover:bg-[#f4f7ff]"
                   href={isAdmin ? "/dashboard" : "/profile"}
