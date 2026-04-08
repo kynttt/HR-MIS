@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -10,7 +10,6 @@ import { logRateLimitBlockedEvent } from "@/lib/security/logging";
 import { getRequestFingerprint } from "@/lib/security/request";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
 import { validateDocumentFile } from "@/lib/security/upload";
-import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/utils/audit";
 import type { ApplicationDetails } from "./service";
@@ -676,3 +675,4 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
 
   return { ok: true as const, employeeId: employee.id };
 }
+

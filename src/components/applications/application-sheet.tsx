@@ -1,6 +1,7 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
+import Image from "next/image"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
@@ -168,9 +169,12 @@ export function ApplicationSheet({ applicationId, onClose }: ApplicationSheetPro
                         </div>
                         {doc.is_image ? (
                           <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block max-w-full">
-                            <img
+                            <Image
                               src={doc.file_url}
                               alt={doc.original_file_name ?? `${doc.document_type} image`}
+                              width={160}
+                              height={96}
+                              unoptimized
                               className="h-24 w-40 max-w-full rounded-md border border-[#e5edf5] bg-[#f8fafc] object-contain"
                             />
                           </a>
@@ -207,7 +211,7 @@ export function ApplicationSheet({ applicationId, onClose }: ApplicationSheetPro
                           <div className="mt-1.5 h-2 w-2 rounded-full bg-[#533afd] shrink-0" />
                           <div>
                             <p className="text-sm text-[#061b31]">
-                              {item.from_status ? `${item.from_status.replaceAll("_", " ")} → ` : ""}
+                              {item.from_status ? `${item.from_status.replaceAll("_", " ")} â†’ ` : ""}
                               <span className="text-[#533afd]">{item.to_status.replaceAll("_", " ")}</span>
                             </p>
                             <p className="text-xs text-[#64748d]">
@@ -230,6 +234,8 @@ export function ApplicationSheet({ applicationId, onClose }: ApplicationSheetPro
     </Sheet>
   )
 }
+
+
 
 
 

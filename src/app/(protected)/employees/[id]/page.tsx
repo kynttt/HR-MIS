@@ -1,3 +1,4 @@
+﻿import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -89,9 +90,12 @@ export default async function EmployeeDetailsPage({ params }: Props) {
                     </div>
                     {document.is_image ? (
                       <a href={document.file_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block max-w-full">
-                        <img
+                        <Image
                           src={document.file_url}
                           alt={document.original_file_name ?? `${document.document_type} image`}
+                          width={160}
+                          height={96}
+                          unoptimized
                           className="h-24 w-40 max-w-full rounded-md border border-[#e5edf5] bg-[#f8fafc] object-contain"
                         />
                       </a>
@@ -110,6 +114,8 @@ export default async function EmployeeDetailsPage({ params }: Props) {
     notFound();
   }
 }
+
+
 
 
 

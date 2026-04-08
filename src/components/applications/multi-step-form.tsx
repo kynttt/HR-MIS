@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { CheckCircle2, FileText, UserRound } from "lucide-react";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -17,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { submitApplicationAction } from "@/features/applications/actions";
 import { cn } from "@/lib/utils/cn";
 
-const STEPS = ["Personal Information", "Documents", "Review & Submit"] as const;
+const STEPS = ["Personal Information", "Documents", "Review and Submit"] as const;
 
 const personalInfoSchema = z.object({
   job_opening_id: z.string().uuid(),
@@ -44,29 +45,42 @@ interface MultiStepApplyFormProps {
 
 function StepIndicator({ current }: { current: number }) {
   return (
-    <div className="mb-8 flex items-center justify-center gap-0">
-      {STEPS.map((step, idx) => (
-        <div key={step} className="flex items-center">
-          <div className="flex flex-col items-center gap-1">
-            <div
-              className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors",
-                idx < current
-                  ? "bg-[#533afd] text-white"
-                  : idx === current
-                    ? "border-2 border-[#533afd] bg-[#533afd]/30 text-[#533afd]"
-                    : "bg-[#e5edf5] text-[#64748d]"
-              )}
-            >
-              {idx < current ? "OK" : idx + 1}
+    <div className="mb-8 grid gap-3 md:grid-cols-3">
+      {STEPS.map((step, idx) => {
+        const Icon = idx === 0 ? UserRound : idx === 1 ? FileText : CheckCircle2;
+        const isDone = idx < current;
+        const isCurrent = idx === current;
+
+        return (
+          <div
+            key={step}
+            className={cn(
+              "rounded-lg border px-4 py-3 transition-colors",
+              isDone || isCurrent ? "border-[#d6d9fc] bg-[#f4f6ff]" : "border-[#e5edf5] bg-white"
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-md text-xs",
+                  isDone ? "bg-[#533afd] text-white" : isCurrent ? "border border-[#533afd] bg-[#eef2ff] text-[#533afd]" : "bg-[#eef2f7] text-[#64748d]"
+                )}
+              >
+                {isDone ? "OK" : idx + 1}
+              </div>
+              <Icon className={cn("h-4 w-4", isDone || isCurrent ? "text-[#533afd]" : "text-[#64748d]")} />
+              <p className={cn("text-sm", isDone || isCurrent ? "text-[#061b31]" : "text-[#64748d]")}>{step}</p>
             </div>
-            <span className={cn("text-xs", idx === current ? "text-[#061b31]" : "text-[#64748d]")}>{step}</span>
           </div>
-          {idx < STEPS.length - 1 && <div className={cn("mx-1 h-[2px] w-12", idx < current ? "bg-[#533afd]" : "bg-[#e5edf5]")} />}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
+}
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="mt-1 text-xs text-rose-500">{message}</p>;
 }
 
 function PersonalInfoStep({
@@ -95,72 +109,69 @@ function PersonalInfoStep({
   const selectedJob = fixedJobId ? jobs.find((job) => job.id === fixedJobId) : null;
 
   return (
-    <form onSubmit={handleSubmit(onNext)} className="space-y-4">
-      <div>
-        <Label required>Job Opening</Label>
-        {selectedJob ? (
-          <>
-            <Input value={`${selectedJob.job_title} - ${selectedJob.department_name ?? "No department"} (${selectedJob.role_type})`} readOnly />
-            <input type="hidden" value={selectedJob.id} {...register("job_opening_id")} />
-          </>
-        ) : (
-          <Select {...register("job_opening_id")}>
-            <option value="">Select a position...</option>
-            {jobs.map((job) => (
-              <option key={job.id} value={job.id}>
-                {job.job_title} - {job.department_name ?? "No department"} ({job.role_type})
-              </option>
-            ))}
-          </Select>
-        )}
-        {errors.job_opening_id ? <p className="mt-1 text-xs text-rose-500">{errors.job_opening_id.message}</p> : null}
-      </div>
+    <Card className="rounded-xl border border-[#e5edf5] bg-white p-5 shadow-[0_18px_34px_-34px_rgba(6,27,49,0.65)] lg:p-6">
+      <form onSubmit={handleSubmit(onNext)} className="space-y-5">
+        <div className="grid gap-5 md:grid-cols-12">
+          <div className="md:col-span-12">
+            <Label required>Job Opening</Label>
+            {selectedJob ? (
+              <>
+                <Input value={`${selectedJob.job_title} - ${selectedJob.department_name ?? "No department"} (${selectedJob.role_type})`} readOnly />
+                <input type="hidden" value={selectedJob.id} {...register("job_opening_id")} />
+              </>
+            ) : (
+              <Select {...register("job_opening_id")}>
+                <option value="">Select a position...</option>
+                {jobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.job_title} - {job.department_name ?? "No department"} ({job.role_type})
+                  </option>
+                ))}
+              </Select>
+            )}
+            <FieldError message={errors.job_opening_id?.message} />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label required>First Name</Label>
-          <Input {...register("first_name")} placeholder="Maria" />
-          {errors.first_name ? <p className="mt-1 text-xs text-rose-500">{errors.first_name.message}</p> : null}
-        </div>
-        <div>
-          <Label required>Last Name</Label>
-          <Input {...register("last_name")} placeholder="Santos" />
-          {errors.last_name ? <p className="mt-1 text-xs text-rose-500">{errors.last_name.message}</p> : null}
-        </div>
-      </div>
+          <div className="md:col-span-4">
+            <Label required>First Name</Label>
+            <Input {...register("first_name")} placeholder="Maria" />
+            <FieldError message={errors.first_name?.message} />
+          </div>
+          <div className="md:col-span-4">
+            <Label>Middle Name</Label>
+            <Input {...register("middle_name")} placeholder="Garcia" />
+          </div>
+          <div className="md:col-span-4">
+            <Label required>Last Name</Label>
+            <Input {...register("last_name")} placeholder="Santos" />
+            <FieldError message={errors.last_name?.message} />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div>
-          <Label>Middle Name</Label>
-          <Input {...register("middle_name")} placeholder="Garcia" />
-        </div>
-        <div>
-          <Label>Suffix</Label>
-          <Input {...register("suffix")} placeholder="Jr, Sr, III" />
-        </div>
-        <div>
-          <Label required>Email</Label>
-          <Input {...register("email")} type="email" placeholder="maria@example.com" />
-          {errors.email ? <p className="mt-1 text-xs text-rose-500">{errors.email.message}</p> : null}
-        </div>
-      </div>
+          <div className="md:col-span-3">
+            <Label>Suffix</Label>
+            <Input {...register("suffix")} placeholder="Jr, Sr, III" />
+          </div>
+          <div className="md:col-span-5">
+            <Label required>Email</Label>
+            <Input {...register("email")} type="email" placeholder="maria@example.com" />
+            <FieldError message={errors.email?.message} />
+          </div>
+          <div className="md:col-span-4">
+            <Label>Phone</Label>
+            <Input {...register("phone")} type="tel" placeholder="+63 912 345 6789" />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label>Phone</Label>
-          <Input {...register("phone")} type="tel" placeholder="+63 912 345 6789" />
+          <div className="md:col-span-12">
+            <Label>Address</Label>
+            <Textarea {...register("address")} placeholder="123 University Ave" />
+          </div>
         </div>
-      </div>
 
-      <div>
-        <Label>Address</Label>
-        <Textarea {...register("address")} placeholder="123 University Ave" />
-      </div>
-
-      <div className="flex justify-end pt-2">
-        <Button type="submit">Next: Upload Documents</Button>
-      </div>
-    </form>
+        <div className="flex justify-end pt-1">
+          <Button type="submit">Next: Upload Documents</Button>
+        </div>
+      </form>
+    </Card>
   );
 }
 
@@ -175,42 +186,40 @@ function DocumentsStep({
   files: Record<string, File[]>;
   onFilesChange: (name: string, files: File[]) => void;
 }) {
+  const documentCards: Array<{ key: string; label: string; accept: string }> = [
+    { key: "resume", label: "Resume or CV", accept: ".pdf,.doc,.docx" },
+    { key: "diploma", label: "Diploma", accept: ".pdf,.doc,.docx" },
+    { key: "tor", label: "Transcript of Records", accept: ".pdf,.doc,.docx" },
+    { key: "certificates", label: "Certificates or Training", accept: ".pdf,.doc,.docx,.zip" }
+  ];
+
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-[#64748d]">Upload supporting documents. All fields are optional but recommended.</p>
+    <Card className="rounded-xl border border-[#e5edf5] bg-white p-5 shadow-[0_18px_34px_-34px_rgba(6,27,49,0.65)] lg:p-6">
+      <div className="space-y-5">
+        <p className="text-sm text-[#64748d]">Upload your supporting documents. You can continue even if some files are not available yet.</p>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div>
-          <Label>Resume / CV</Label>
-          <FileUpload accept=".pdf,.doc,.docx" onFilesChange={(f) => onFilesChange("resume", f)} />
-          {files.resume[0] ? <p className="mt-1 text-xs text-[#533afd]">{files.resume[0].name}</p> : null}
+        <div className="grid gap-4 md:grid-cols-2">
+          {documentCards.map((item) => (
+            <div key={item.key} className="rounded-lg border border-[#e5edf5] bg-[#f8fafe] p-4">
+              <Label>{item.label}</Label>
+              <div className="mt-2">
+                <FileUpload accept={item.accept} onFilesChange={(f) => onFilesChange(item.key, f)} />
+              </div>
+              {files[item.key]?.[0] ? <p className="mt-2 text-xs text-[#533afd]">{files[item.key][0].name}</p> : null}
+            </div>
+          ))}
         </div>
-        <div>
-          <Label>Diploma</Label>
-          <FileUpload accept=".pdf,.doc,.docx" onFilesChange={(f) => onFilesChange("diploma", f)} />
-          {files.diploma[0] ? <p className="mt-1 text-xs text-[#533afd]">{files.diploma[0].name}</p> : null}
-        </div>
-        <div>
-          <Label>Transcript of Records (TOR)</Label>
-          <FileUpload accept=".pdf,.doc,.docx" onFilesChange={(f) => onFilesChange("tor", f)} />
-          {files.tor[0] ? <p className="mt-1 text-xs text-[#533afd]">{files.tor[0].name}</p> : null}
-        </div>
-        <div>
-          <Label>Certificates / Training</Label>
-          <FileUpload accept=".pdf,.doc,.docx,.zip" onFilesChange={(f) => onFilesChange("certificates", f)} />
-          {files.certificates[0] ? <p className="mt-1 text-xs text-[#533afd]">{files.certificates[0].name}</p> : null}
+
+        <div className="flex justify-between pt-1">
+          <Button variant="secondary" onClick={onBack} type="button">
+            Back
+          </Button>
+          <Button onClick={onNext} type="button">
+            Next: Review
+          </Button>
         </div>
       </div>
-
-      <div className="flex justify-between pt-4">
-        <Button variant="secondary" onClick={onBack} type="button">
-          Back
-        </Button>
-        <Button onClick={onNext} type="button">
-          Next: Review
-        </Button>
-      </div>
-    </div>
+    </Card>
   );
 }
 
@@ -231,61 +240,63 @@ function ReviewStep({
   const fullName = [data.first_name, data.middle_name, data.last_name].filter(Boolean).join(" ");
 
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-[#64748d]">Review your information before submitting.</p>
+    <Card className="rounded-xl border border-[#e5edf5] bg-white p-5 shadow-[0_18px_34px_-34px_rgba(6,27,49,0.65)] lg:p-6">
+      <div className="space-y-4">
+        <p className="text-sm text-[#64748d]">Review your details before final submission.</p>
 
-      <Card className="space-y-3 p-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-[#64748d]">Position</p>
-          <p className="text-sm text-[#061b31]">
-            {selectedJob ? `${selectedJob.job_title} - ${selectedJob.department_name ?? "No department"} (${selectedJob.role_type})` : data.job_opening_id}
-          </p>
-        </div>
-        <Separator />
-        <div className="grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-[#e5edf5] bg-[#f8fafc] p-4">
           <div>
-            <p className="text-xs text-[#64748d]">Full Name</p>
+            <p className="text-xs uppercase tracking-wide text-[#64748d]">Position</p>
             <p className="text-sm text-[#061b31]">
-              {fullName}
-              {data.suffix ? `, ${data.suffix}` : ""}
+              {selectedJob ? `${selectedJob.job_title} - ${selectedJob.department_name ?? "No department"} (${selectedJob.role_type})` : data.job_opening_id}
             </p>
           </div>
-          <div>
-            <p className="text-xs text-[#64748d]">Email</p>
-            <p className="text-sm text-[#061b31]">{data.email}</p>
-          </div>
-          <div>
-            <p className="text-xs text-[#64748d]">Phone</p>
-            <p className="text-sm text-[#061b31]">{data.phone || "-"}</p>
-          </div>
-          <div>
-            <p className="text-xs text-[#64748d]">Address</p>
-            <p className="text-sm text-[#061b31]">{data.address || "-"}</p>
+          <Separator className="my-3" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <div>
+              <p className="text-xs text-[#64748d]">Full Name</p>
+              <p className="text-sm text-[#061b31]">
+                {fullName}
+                {data.suffix ? `, ${data.suffix}` : ""}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[#64748d]">Email</p>
+              <p className="text-sm text-[#061b31]">{data.email}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#64748d]">Phone</p>
+              <p className="text-sm text-[#061b31]">{data.phone || "-"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-[#64748d]">Address</p>
+              <p className="text-sm text-[#061b31]">{data.address || "-"}</p>
+            </div>
           </div>
         </div>
-      </Card>
 
-      <div className="flex justify-between pt-4">
-        <Button variant="secondary" onClick={onBack} disabled={isSubmitting} type="button">
-          Back
-        </Button>
-        <Button onClick={onSubmit} disabled={isSubmitting} type="button">
-          {isSubmitting ? "Submitting..." : "Submit Application"}
-        </Button>
+        <div className="flex justify-between pt-2">
+          <Button variant="secondary" onClick={onBack} disabled={isSubmitting} type="button">
+            Back
+          </Button>
+          <Button onClick={onSubmit} disabled={isSubmitting} type="button">
+            {isSubmitting ? "Submitting..." : "Submit Application"}
+          </Button>
+        </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
 function SuccessState() {
   return (
-    <div className="flex flex-col items-center justify-center space-y-4 py-12 text-center">
+    <Card className="flex flex-col items-center justify-center space-y-4 rounded-xl border border-emerald-200 bg-white py-12 text-center shadow-[0_18px_34px_-34px_rgba(16,185,129,0.65)]">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">OK</div>
       <div>
         <h3 className="text-lg font-semibold text-[#061b31]">Application Submitted</h3>
         <p className="mt-1 text-sm text-[#64748d]">Thank you for your interest. Our HR team will review your application and contact you soon.</p>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -376,4 +387,3 @@ export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, 
     </div>
   );
 }
-
