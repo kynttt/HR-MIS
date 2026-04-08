@@ -1,11 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
-import type { ApplicationStatus } from "@/types/domain";
+import type { ApplicationStatus, RoleType } from "@/types/domain";
 
 export type ApplicationFilters = {
   q?: string;
-  status?: string;
+  status?: ApplicationStatus;
   departmentId?: string;
-  roleType?: string;
+  roleType?: RoleType;
 };
 
 export type PaginatedApplicationsResult = {
@@ -274,6 +274,7 @@ export async function listApplicationsPaginated(
 
   return { items, total: count ?? 0 };
 }
+
 
 
 

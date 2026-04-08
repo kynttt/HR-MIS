@@ -1,11 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import type { EmploymentStatus, RoleType } from "@/types/domain";
 
 export type EmployeeFilters = {
   q?: string;
-  roleType?: string;
+  roleType?: RoleType;
   departmentId?: string;
-  employmentStatus?: string;
-  active?: string;
+  employmentStatus?: EmploymentStatus;
+  active?: "true" | "false";
 };
 
 export type PaginatedEmployeesResult = {
@@ -262,6 +263,8 @@ export async function listEmployeesPaginated(
 
   return { items, total: count ?? 0 };
 }
+
+
 
 
 

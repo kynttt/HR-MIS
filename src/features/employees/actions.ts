@@ -2,11 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createClient } from "@/lib/supabase/server";
+import { requireAdminRole } from "@/features/auth/service";
 import { deleteFileFromCloudinary, uploadFileToCloudinary } from "@/lib/cloudinary/server";
+import { logRateLimitBlockedEvent } from "@/lib/security/logging";
+import { getRequestFingerprint } from "@/lib/security/request";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
+import { validateDocumentFile } from "@/lib/security/upload";
+import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/utils/audit";
 
 import { employeeUpdateSchema } from "./schema";
+
+const EMPLOYEE_MANAGEMENT_ROLES = ["super_admin", "hr_admin", "department_admin"] as const;
+const EMPLOYEE_DOCUMENT_TYPES = new Set(["resume", "diploma", "tor", "certificates", "prc_license", "contract", "other"]);
+
 async function uploadEmployeeFile(params: {
   employeeId: string;
   documentType: string;
@@ -23,6 +32,8 @@ async function uploadEmployeeFile(params: {
 }
 
 export async function updateEmployeeAction(employeeId: string, input: unknown) {
+  await requireAdminRole(EMPLOYEE_MANAGEMENT_ROLES);
+
   const parsed = employeeUpdateSchema.parse(input);
   const supabase = await createClient();
 
@@ -59,7 +70,7 @@ export async function updateEmployeeAction(employeeId: string, input: unknown) {
   }
 
   if (parsed.role_type === "faculty") {
-    await supabase
+    const { error: facultyError } = await supabase
       .from("faculty_profiles")
       .upsert(
         {
@@ -72,8 +83,12 @@ export async function updateEmployeeAction(employeeId: string, input: unknown) {
         },
         { onConflict: "employee_id" }
       );
+
+    if (facultyError) {
+      return { ok: false as const, error: facultyError.message };
+    }
   } else {
-    await supabase
+    const { error: staffError } = await supabase
       .from("staff_profiles")
       .upsert(
         {
@@ -83,6 +98,10 @@ export async function updateEmployeeAction(employeeId: string, input: unknown) {
         },
         { onConflict: "employee_id" }
       );
+
+    if (staffError) {
+      return { ok: false as const, error: staffError.message };
+    }
   }
 
   await logAudit("update_employee", "employees", employeeId, { role_type: parsed.role_type });
@@ -94,10 +113,30 @@ export async function updateEmployeeAction(employeeId: string, input: unknown) {
 }
 
 export async function uploadEmployeeDocumentAction(formData: FormData) {
+  await requireAdminRole(EMPLOYEE_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
+
+  const rateLimitKey = session?.user.id
+    ? `employee-doc-upload:user:${session.user.id}`
+    : await getRequestFingerprint("employee-doc-upload:anon");
+
+  const rateLimit = await enforceRateLimit({ key: rateLimitKey, max: 30, windowMs: 60_000 });
+  if (!rateLimit.ok) {
+    await logRateLimitBlockedEvent({
+      scope: "employee.document.upload",
+      key: rateLimitKey,
+      retryAfterMs: rateLimit.retryAfterMs,
+      remaining: rateLimit.remaining,
+      metadata: {
+        hasSession: Boolean(session?.user.id)
+      }
+    });
+    return { ok: false as const, error: "Too many upload attempts. Please try again later." };
+  }
 
   const employeeIdEntry = formData.get("employee_id");
   const documentTypeEntry = formData.get("document_type");
@@ -106,14 +145,23 @@ export async function uploadEmployeeDocumentAction(formData: FormData) {
   const employeeId = typeof employeeIdEntry === "string" ? employeeIdEntry : "";
   const documentType = typeof documentTypeEntry === "string" ? documentTypeEntry : "other";
 
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false as const, error: "File is required." };
+  if (!employeeId) {
+    return { ok: false as const, error: "Employee id is required." };
+  }
+
+  if (!EMPLOYEE_DOCUMENT_TYPES.has(documentType)) {
+    return { ok: false as const, error: "Invalid document type." };
+  }
+
+  const fileValidation = validateDocumentFile(file as File);
+  if (!fileValidation.ok) {
+    return { ok: false as const, error: fileValidation.error };
   }
 
   const uploadResult = await uploadEmployeeFile({
     employeeId,
     documentType,
-    file
+    file: file as File
   });
 
   if (!uploadResult.ok) {
@@ -124,11 +172,14 @@ export async function uploadEmployeeDocumentAction(formData: FormData) {
     employee_id: employeeId,
     document_type: documentType,
     file_path: uploadResult.filePath,
-    original_file_name: file.name,
+    original_file_name: (file as File).name,
     uploaded_by: session?.user.id ?? null
   });
 
   if (insertError) {
+    await deleteFileFromCloudinary(uploadResult.filePath).catch((error) => {
+      console.error("Employee upload cleanup failed", error);
+    });
     return { ok: false as const, error: insertError.message };
   }
 
@@ -139,6 +190,8 @@ export async function uploadEmployeeDocumentAction(formData: FormData) {
 }
 
 export async function deleteEmployeeDocumentAction(formData: FormData) {
+  await requireAdminRole(EMPLOYEE_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
 
   const employeeIdEntry = formData.get("employee_id");
@@ -175,11 +228,14 @@ export async function deleteEmployeeDocumentAction(formData: FormData) {
   if (/^https?:\/\//i.test(document.file_path)) {
     try {
       await deleteFileFromCloudinary(document.file_path);
-    } catch {
-      // Best effort cleanup for external file storage.
+    } catch (error) {
+      console.error("Employee document cleanup failed", error);
     }
   } else {
-    await supabase.storage.from("employee-documents").remove([document.file_path]);
+    const { error: storageDeleteError } = await supabase.storage.from("employee-documents").remove([document.file_path]);
+    if (storageDeleteError) {
+      console.error("Employee document storage cleanup failed", storageDeleteError);
+    }
   }
 
   await logAudit("delete_employee_document", "employees", employeeId, { document_id: documentId });
@@ -189,4 +245,6 @@ export async function deleteEmployeeDocumentAction(formData: FormData) {
 
   return { ok: true as const };
 }
+
+
 

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import type { RoleType } from "@/types/domain";
 
 export type JobOpeningListItem = {
   id: string;
@@ -29,12 +30,15 @@ export type JobOpeningEditDetails = {
   status: "open" | "closed";
 };
 
+export type JobStatus = "open" | "closed";
+export type JobSortKey = "title" | "department" | "status" | "created";
+
 export type JobOpeningFilters = {
   q?: string;
-  status?: string;
+  status?: JobStatus;
   departmentId?: string;
-  roleType?: string;
-  sort?: string;
+  roleType?: RoleType;
+  sort?: JobSortKey;
   order?: "asc" | "desc";
 };
 
@@ -181,6 +185,9 @@ export async function listJobOpeningsPaginated(
 
   return { items, total: count ?? 0 };
 }
+
+
+
 
 
 

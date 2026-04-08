@@ -15,6 +15,7 @@ interface Filter {
   type: "text" | "select"
   options?: FilterOption[]
   placeholder?: string
+  allLabel?: string
 }
 
 interface FilterBarProps {
@@ -58,7 +59,7 @@ function FilterBar({ filters }: FilterBarProps) {
             defaultValue={searchParams.get(filter.name) ?? ""}
             onChange={(e) => handleChange(filter.name, e.target.value)}
           >
-            <option value="">{filter.placeholder ?? filter.label}</option>
+            <option value="">{filter.allLabel ?? `All ${filter.label.toLowerCase()}`}</option>
             {filter.options?.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}

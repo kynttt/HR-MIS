@@ -1,86 +1,47 @@
 # rules.md
 
-## Engineering Principles
+## Engineering Rules
 
----
+1. Validate all external input on the server.
+- Use Zod `safeParse` for Server Actions, Route Handlers, and background jobs.
+- Reject invalid payloads with controlled errors; do not rely on client validation.
 
-## 1. Architecture First
-Always design before coding.
+2. Enforce authorization in every mutating API surface.
+- Every privileged server action must call `requireAdminRole(...)` before doing work.
+- Do not assume route protection alone is enough.
 
----
+3. Add rate limiting to abuse-prone endpoints.
+- Public submission and upload actions must enforce rate limits.`r`n- Production deployments must use a shared limiter backend (e.g., Upstash Redis), not process-local memory only.
+- Return explicit throttling errors instead of silently dropping requests.
 
-## 2. Separation of Concerns
-Never mix:
-- UI
-- validation
-- data
-- business logic
+4. Validate uploads strictly.
+- Require allowed `document_type`, max file size, and allowed MIME/extension.
+- Clean up external storage if DB write fails after upload.
 
----
+5. No silent failure handling.
+- No empty `catch` blocks.
+- Log cleanup failures with context (`console.error` at minimum) and return actionable errors when possible.
 
-## 3. Strong Typing
-- no `any`
-- use TypeScript strictly
+6. Preserve consistency across multi-step writes.
+- Use transactions where available; otherwise add compensating rollback logic.
+- Never leave partial applicant/application/employee state on failure.
 
----
+7. Query only what you need.
+- Avoid broad `*` selects in production paths.
+- Select minimal columns and relations required by the response.
 
-## 4. Validation
-- Zod for forms
-- validate all inputs
+8. Handle DB errors on every write.
+- Check and branch on every insert/update/delete/upsert result.
+- Treat partial write failures as errors and stop the flow.
 
----
+9. Keep typing strict.
+- No `any` in API logic.
+- Use domain enums/types for status, role, and filter parameters.
 
-## 5. Security
-- enforce RLS
-- do not trust frontend
-- protect storage
+10. Definition of done for API changes.
+- Input validation present.
+- Auth/role checks present.
+- Rate limiting present where abuse is possible.
+- Failure paths tested and non-silent.
+- Queries scoped to required fields only.
 
----
-
-## 6. Clean Code
-- readable
-- small components
-- descriptive names
-
----
-
-## 7. Database Rules
-- UUID primary keys
-- created_at, updated_at
-- foreign keys
-- normalized design
-
----
-
-## 8. Do NOT
-- overengineer
-- hardcode secrets
-- skip validation
-- mix concerns
-- create giant components
-
----
-
-## 9. UI Rules
-- clean admin UI
-- loading states
-- error states
-- empty states
-
----
-
-## 10. Data Modeling Rule
-IMPORTANT:
-
-Applicant and Employee must be separate entities.
-
-Use conversion flow.
-
----
-
-## 11. Definition of Done
-- works
-- typed
-- secure
-- readable
-- scalable
