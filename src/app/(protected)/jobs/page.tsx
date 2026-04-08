@@ -12,13 +12,38 @@ import { SortHeader } from "@/components/ui/sort-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listDepartments } from "@/features/departments/service";
 import { setJobOpeningStatusAction } from "@/features/jobs/actions";
-import { listJobOpeningsPaginated } from "@/features/jobs/service";
+import { listJobOpeningsPaginated, type JobSortKey, type JobStatus } from "@/features/jobs/service";
+import type { RoleType } from "@/types/domain";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 const PAGE_SIZE = 10;
+const ROLE_TYPES: readonly RoleType[] = ["faculty", "staff"];
+const JOB_STATUSES: readonly JobStatus[] = ["open", "closed"];
+const JOB_SORTS: readonly JobSortKey[] = ["title", "department", "status", "created"];
+
+type SortOrder = "asc" | "desc";
+
+function parseEnumValue<T extends string>(value: string | string[] | undefined, allowed: readonly T[]): T | undefined {
+  if (typeof value !== "string") return undefined;
+  return allowed.includes(value as T) ? (value as T) : undefined;
+}
+
+function parseSort(value: string | string[] | undefined): JobSortKey | undefined {
+  if (typeof value !== "string") return undefined;
+
+  if (value === "job_title") return "title";
+  if (value === "department_name") return "department";
+  if (value === "created_at") return "created";
+
+  return parseEnumValue(value, JOB_SORTS);
+}
+
+function parseSortOrder(value: string | string[] | undefined): SortOrder {
+  return value === "asc" || value === "desc" ? value : "desc";
+}
 
 function toPositiveInt(value: string | string[] | undefined, fallback: number): number {
   if (typeof value !== "string") return fallback;
@@ -29,19 +54,25 @@ function toPositiveInt(value: string | string[] | undefined, fallback: number): 
 export default async function JobsPage({ searchParams }: Props) {
   const query = await searchParams;
   const q = typeof query.q === "string" ? query.q : "";
-  const status = typeof query.status === "string" ? query.status : "";
-  const departmentId = typeof query.departmentId === "string" ? query.departmentId : "";
-  const roleType = typeof query.roleType === "string" ? query.roleType : "";
-  const sort = typeof query.sort === "string" ? query.sort : "";
-  const order = typeof query.order === "string" ? (query.order as "asc" | "desc") : "desc";
+  const status = parseEnumValue(query.status, JOB_STATUSES);
+  const departmentId = typeof query.departmentId === "string" ? query.departmentId : undefined;
+  const roleType = parseEnumValue(query.roleType, ROLE_TYPES);
+  const sort = parseSort(query.sort);
+  const order = parseSortOrder(query.order);
   const page = toPositiveInt(query.page, 1);
   const updated = query.updated === "1";
   const created = query.created === "1";
 
-  const [{ items: jobs, total }, departments] = await Promise.all([
-    listJobOpeningsPaginated({ q, status, departmentId, roleType, sort, order }, page, PAGE_SIZE),
-    listDepartments()
-  ]);
+  let paginated = await listJobOpeningsPaginated({ q, status, departmentId, roleType, sort, order }, page, PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(paginated.total / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+
+  if (currentPage !== page) {
+    paginated = await listJobOpeningsPaginated({ q, status, departmentId, roleType, sort, order }, currentPage, PAGE_SIZE);
+  }
+
+  const { items: jobs, total } = paginated;
+  const departments = await listDepartments();
 
   return (
     <div className="space-y-6">
@@ -62,19 +93,19 @@ export default async function JobsPage({ searchParams }: Props) {
 
       <form className="grid gap-2 rounded-lg border border-[#e5edf5] bg-[#f6f9fc] p-4 md:grid-cols-4">
         <Input defaultValue={q} name="q" placeholder="Search by title" />
-        <Select defaultValue={status} name="status">
-          <option value="">All statuses</option>
+        <Select defaultValue={status ?? ""} name="status">
+          <option value="">All job statuses</option>
           <option value="open">Open</option>
           <option value="closed">Closed</option>
         </Select>
-        <Select defaultValue={departmentId} name="departmentId">
+        <Select defaultValue={departmentId ?? ""} name="departmentId">
           <option value="">All departments</option>
           {departments.map((d) => (
             <option key={d.id} value={d.id}>{d.department_name}</option>
           ))}
         </Select>
-        <Select defaultValue={roleType} name="roleType">
-          <option value="">All roles</option>
+        <Select defaultValue={roleType ?? ""} name="roleType">
+          <option value="">All role types</option>
           <option value="faculty">Faculty</option>
           <option value="staff">Staff</option>
         </Select>
@@ -86,12 +117,12 @@ export default async function JobsPage({ searchParams }: Props) {
           <Table>
             <TableHeader>
               <TableRow>
-                <SortHeader name="title" label="Title" currentSort={sort} currentOrder={order} />
-                <SortHeader name="department" label="Department" currentSort={sort} currentOrder={order} />
+                <SortHeader name="title" label="Title" currentSort={sort ?? ""} currentOrder={order} />
+                <SortHeader name="department" label="Department" currentSort={sort ?? ""} currentOrder={order} />
                 <TableHead>Role</TableHead>
                 <TableHead>Type</TableHead>
-                <SortHeader name="status" label="Status" currentSort={sort} currentOrder={order} />
-                <SortHeader name="created" label="Posted" currentSort={sort} currentOrder={order} />
+                <SortHeader name="status" label="Status" currentSort={sort ?? ""} currentOrder={order} />
+                <SortHeader name="created" label="Posted" currentSort={sort ?? ""} currentOrder={order} />
                 <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
@@ -125,7 +156,7 @@ export default async function JobsPage({ searchParams }: Props) {
                         </Link>
                         <span className="text-[#e5edf5]">|</span>
                         <form action={setJobOpeningStatusAction.bind(null, job.id, job.status === "open" ? "closed" : "open")}>
-                          <button suppressHydrationWarning className="text-xs text-[#64748d] hover:text-[#061b31]" type="submit">
+                          <button className="text-xs text-[#64748d] hover:text-[#061b31]" type="submit">
                             {job.status === "open" ? "Close" : "Open"}
                           </button>
                         </form>
@@ -137,8 +168,9 @@ export default async function JobsPage({ searchParams }: Props) {
             </TableBody>
           </Table>
         </div>
-        <QueryPagination page={page} pageSize={PAGE_SIZE} total={total} />
+        <QueryPagination page={currentPage} pageSize={PAGE_SIZE} total={total} />
       </div>
     </div>
   );
 }
+

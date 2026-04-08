@@ -36,7 +36,7 @@ export default async function DepartmentsPage() {
                   <td className="px-3 py-2">{department.is_active ? <Badge variant="success">Active</Badge> : <Badge variant="muted">Inactive</Badge>}</td>
                   <td className="px-3 py-2">
                     <form action={toggleDepartmentAction.bind(null, department.id, !department.is_active)}>
-                      <button suppressHydrationWarning className="text-sm text-brand-700" type="submit">
+                      <button className="text-sm text-brand-700" type="submit">
                         Set {department.is_active ? "Inactive" : "Active"}
                       </button>
                     </form>
@@ -50,6 +50,7 @@ export default async function DepartmentsPage() {
     </div>
   );
 }
+
 
 
 

@@ -3,12 +3,20 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { requireAdminRole } from "@/features/auth/service";
 import { deleteFileFromCloudinary, uploadFileToCloudinary } from "@/lib/cloudinary/server";
+import { logRateLimitBlockedEvent } from "@/lib/security/logging";
+import { getRequestFingerprint } from "@/lib/security/request";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
+import { validateDocumentFile } from "@/lib/security/upload";
+import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/utils/audit";
 import type { ApplicationDetails } from "./service";
 
 import { applicationNoteSchema, applicationStatusSchema, convertApplicationSchema, publicApplicationSchema } from "./schema";
+
+const APPLICATION_MANAGEMENT_ROLES = ["super_admin", "hr_admin", "department_admin"] as const;
+const APPLICATION_DOCUMENT_TYPES = new Set(["resume", "diploma", "tor", "certificates", "other"]);
 
 function isAbsoluteUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
@@ -18,13 +26,26 @@ function isImagePath(value: string): boolean {
   const normalized = value.split("?")[0].toLowerCase();
   return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif"].some((ext) => normalized.endsWith(ext));
 }
+
+async function cleanupCloudinaryUrls(urls: string[]) {
+  for (const url of urls) {
+    try {
+      await deleteFileFromCloudinary(url);
+    } catch (error) {
+      console.error("Cloudinary cleanup failed", error);
+    }
+  }
+}
+
 export async function getApplicationDetailsAction(applicationId: string): Promise<ApplicationDetails> {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
 
   const { data: application, error: applicationError } = await supabase
     .from("applications")
     .select(
-      "id, status, submitted_at, converted_employee_id, applicants(*), job_openings(*, departments(*)), application_documents(*), application_notes(*), application_status_history(*)"
+      "id, status, submitted_at, converted_employee_id, applicants(first_name, last_name, email, phone), application_documents(id, document_type, original_file_name, file_path), application_notes(id, note_text), application_status_history(id, from_status, to_status, changed_at)"
     )
     .eq("id", applicationId)
     .single();
@@ -96,6 +117,7 @@ async function uploadApplicationFile(params: {
     return { ok: false, error: error instanceof Error ? error.message : "Cloudinary upload failed." };
   }
 }
+
 export async function updateApplicationStatus(
   applicationId: string,
   status: "submitted" | "under_review" | "shortlisted" | "interview_scheduled" | "interviewed" | "for_requirements" | "accepted" | "rejected" | "withdrawn",
@@ -105,9 +127,22 @@ export async function updateApplicationStatus(
 }
 
 export async function submitApplicationAction(formData: FormData) {
+  const fingerprint = await getRequestFingerprint("apply");
+  const globalRateLimitKey = `${fingerprint}:global`;
+  const globalLimit = await enforceRateLimit({ key: globalRateLimitKey, max: 10, windowMs: 10 * 60_000 });
+  if (!globalLimit.ok) {
+    await logRateLimitBlockedEvent({
+      scope: "apply.submit.global",
+      key: globalRateLimitKey,
+      retryAfterMs: globalLimit.retryAfterMs,
+      remaining: globalLimit.remaining
+    });
+    redirect("/apply?error=Too%20many%20submissions.%20Please%20try%20again%20later.");
+  }
+
   const supabase = await createClient();
 
-  const parsed = publicApplicationSchema.parse({
+  const parsedResult = publicApplicationSchema.safeParse({
     job_opening_id: getFormValue(formData, "job_opening_id"),
     first_name: getFormValue(formData, "first_name"),
     middle_name: getFormValue(formData, "middle_name") || undefined,
@@ -118,91 +153,170 @@ export async function submitApplicationAction(formData: FormData) {
     address: getFormValue(formData, "address") || undefined
   });
 
-  const { data: applicant, error: applicantError } = await supabase
-    .from("applicants")
-    .insert({
-      first_name: parsed.first_name,
-      middle_name: parsed.middle_name ?? null,
-      last_name: parsed.last_name,
-      suffix: parsed.suffix ?? null,
-      email: parsed.email,
-      phone: parsed.phone ?? null,
-      address: parsed.address ?? null
-    })
-    .select("id")
-    .single();
-
-  if (applicantError) {
-    redirect(`/apply?error=${encodeURIComponent(applicantError.message)}`);
+  if (!parsedResult.success) {
+    const firstIssue = parsedResult.error.issues[0];
+    redirect(`/apply?error=${encodeURIComponent(firstIssue?.message ?? "Invalid submission data")}`);
   }
 
-  const { data: application, error: applicationError } = await supabase
-    .from("applications")
-    .insert({
-      applicant_id: applicant.id,
-      job_opening_id: parsed.job_opening_id,
-      status: "submitted"
-    })
-    .select("id")
-    .single();
+  const parsed = parsedResult.data;
 
-  if (applicationError) {
-    redirect(`/apply?error=${encodeURIComponent(applicationError.message)}`);
+  const emailRateLimitKey = `apply:email:${parsed.email.toLowerCase()}`;
+  const emailLimit = await enforceRateLimit({
+    key: emailRateLimitKey,
+    max: 3,
+    windowMs: 10 * 60_000
+  });
+
+  if (!emailLimit.ok) {
+    await logRateLimitBlockedEvent({
+      scope: "apply.submit.email",
+      key: emailRateLimitKey,
+      retryAfterMs: emailLimit.retryAfterMs,
+      remaining: emailLimit.remaining
+    });
+    redirect("/apply?error=Too%20many%20attempts%20for%20this%20email.%20Please%20try%20again%20later.");
   }
 
-  const documentInputs: Array<{ field: string; document_type: "resume" | "diploma" | "tor" | "certificates" | "other" }> = [
-    { field: "resume", document_type: "resume" },
-    { field: "diploma", document_type: "diploma" },
-    { field: "tor", document_type: "tor" },
-    { field: "certificates", document_type: "certificates" },
-    { field: "other", document_type: "other" }
-  ];
+  const uploadedCloudinaryUrls: string[] = [];
+  let applicantId: string | null = null;
+  let applicationId: string | null = null;
 
-  for (const item of documentInputs) {
-    const entry = formData.get(item.field);
-    if (!(entry instanceof File) || entry.size === 0) {
-      continue;
+  try {
+    const { data: applicant, error: applicantError } = await supabase
+      .from("applicants")
+      .insert({
+        first_name: parsed.first_name,
+        middle_name: parsed.middle_name ?? null,
+        last_name: parsed.last_name,
+        suffix: parsed.suffix ?? null,
+        email: parsed.email,
+        phone: parsed.phone ?? null,
+        address: parsed.address ?? null
+      })
+      .select("id")
+      .single();
+
+    if (applicantError || !applicant) {
+      throw new Error(applicantError?.message ?? "Failed to create applicant record.");
     }
 
-    const uploadResult = await uploadApplicationFile({
-      applicationId: application.id,
-      documentType: item.document_type,
-      file: entry
-    });
+    applicantId = applicant.id;
 
-    if (uploadResult.ok) {
-      await supabase.from("application_documents").insert({
+    const { data: application, error: applicationError } = await supabase
+      .from("applications")
+      .insert({
+        applicant_id: applicant.id,
+        job_opening_id: parsed.job_opening_id,
+        status: "submitted"
+      })
+      .select("id")
+      .single();
+
+    if (applicationError || !application) {
+      throw new Error(applicationError?.message ?? "Failed to create application record.");
+    }
+
+    applicationId = application.id;
+
+    const documentInputs: Array<{ field: string; document_type: "resume" | "diploma" | "tor" | "certificates" | "other" }> = [
+      { field: "resume", document_type: "resume" },
+      { field: "diploma", document_type: "diploma" },
+      { field: "tor", document_type: "tor" },
+      { field: "certificates", document_type: "certificates" },
+      { field: "other", document_type: "other" }
+    ];
+
+    for (const item of documentInputs) {
+      const entry = formData.get(item.field);
+      if (!(entry instanceof File) || entry.size === 0) {
+        continue;
+      }
+
+      const fileValidation = validateDocumentFile(entry);
+      if (!fileValidation.ok) {
+        throw new Error(fileValidation.error);
+      }
+
+      const uploadResult = await uploadApplicationFile({
+        applicationId: application.id,
+        documentType: item.document_type,
+        file: entry
+      });
+
+      if (!uploadResult.ok) {
+        throw new Error(uploadResult.error);
+      }
+
+      uploadedCloudinaryUrls.push(uploadResult.filePath);
+
+      const { error: documentInsertError } = await supabase.from("application_documents").insert({
         application_id: application.id,
         document_type: item.document_type,
         file_path: uploadResult.filePath,
         original_file_name: entry.name,
         uploaded_by: null
       });
+
+      if (documentInsertError) {
+        throw new Error(documentInsertError.message);
+      }
     }
+
+    const { error: statusHistoryError } = await supabase.from("application_status_history").insert({
+      application_id: application.id,
+      from_status: null,
+      to_status: "submitted",
+      changed_by: null,
+      remarks: "Initial public application submission"
+    });
+
+    if (statusHistoryError) {
+      throw new Error(statusHistoryError.message);
+    }
+
+    await logAudit("submit_application", "applications", application.id, { email: parsed.email }).catch((error) => {
+      console.error("Audit log failed for submit_application", error);
+    });
+
+    redirect("/apply?success=1");
+  } catch (error) {
+    if (applicationId) {
+      await supabase.from("application_documents").delete().eq("application_id", applicationId);
+      await supabase.from("application_status_history").delete().eq("application_id", applicationId);
+      await supabase.from("applications").delete().eq("id", applicationId);
+    }
+
+    if (applicantId) {
+      await supabase.from("applicants").delete().eq("id", applicantId);
+    }
+
+    await cleanupCloudinaryUrls(uploadedCloudinaryUrls);
+
+    const message = error instanceof Error ? error.message : "Failed to submit application.";
+    redirect(`/apply?error=${encodeURIComponent(message)}`);
   }
-
-  await supabase.from("application_status_history").insert({
-    application_id: application.id,
-    from_status: null,
-    to_status: "submitted",
-    changed_by: null,
-    remarks: "Initial public application submission"
-  });
-
-  await logAudit("submit_application", "applications", application.id, { email: parsed.email });
-
-  redirect("/apply?success=1");
 }
 
 export async function updateApplicationStatusAction(input: unknown) {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
 
-  const parsed = applicationStatusSchema.parse(input);
+  const parsedResult = applicationStatusSchema.safeParse(input);
+  if (!parsedResult.success) {
+    return { ok: false as const, error: parsedResult.error.issues[0]?.message ?? "Invalid status payload." };
+  }
 
-  const { data: existing } = await supabase.from("applications").select("status").eq("id", parsed.application_id).single();
+  const parsed = parsedResult.data;
+
+  const { data: existing, error: existingError } = await supabase.from("applications").select("status").eq("id", parsed.application_id).single();
+
+  if (existingError) {
+    return { ok: false as const, error: existingError.message };
+  }
 
   const { error } = await supabase.from("applications").update({ status: parsed.status }).eq("id", parsed.application_id);
 
@@ -210,13 +324,17 @@ export async function updateApplicationStatusAction(input: unknown) {
     return { ok: false as const, error: error.message };
   }
 
-  await supabase.from("application_status_history").insert({
+  const { error: historyError } = await supabase.from("application_status_history").insert({
     application_id: parsed.application_id,
     from_status: existing?.status ?? null,
     to_status: parsed.status,
     changed_by: session?.user.id ?? null,
     remarks: parsed.remarks ?? null
   });
+
+  if (historyError) {
+    return { ok: false as const, error: historyError.message };
+  }
 
   await logAudit("update_application_status", "applications", parsed.application_id, { status: parsed.status });
 
@@ -226,12 +344,19 @@ export async function updateApplicationStatusAction(input: unknown) {
 }
 
 export async function addApplicationNoteAction(input: unknown) {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
 
-  const parsed = applicationNoteSchema.parse(input);
+  const parsedResult = applicationNoteSchema.safeParse(input);
+  if (!parsedResult.success) {
+    return { ok: false as const, error: parsedResult.error.issues[0]?.message ?? "Invalid note payload." };
+  }
+
+  const parsed = parsedResult.data;
 
   const { error } = await supabase.from("application_notes").insert({
     application_id: parsed.application_id,
@@ -250,23 +375,52 @@ export async function addApplicationNoteAction(input: unknown) {
 }
 
 export async function uploadApplicationDocumentAction(formData: FormData) {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
   const {
     data: { session }
   } = await supabase.auth.getSession();
 
+  const rateLimitKey = session?.user.id
+    ? `application-doc-upload:user:${session.user.id}`
+    : await getRequestFingerprint("application-doc-upload:anon");
+
+  const rateLimit = await enforceRateLimit({ key: rateLimitKey, max: 30, windowMs: 60_000 });
+  if (!rateLimit.ok) {
+    await logRateLimitBlockedEvent({
+      scope: "apply.document.upload",
+      key: rateLimitKey,
+      retryAfterMs: rateLimit.retryAfterMs,
+      remaining: rateLimit.remaining,
+      metadata: {
+        hasSession: Boolean(session?.user.id)
+      }
+    });
+    return { ok: false as const, error: "Too many upload attempts. Please try again later." };
+  }
+
   const applicationId = getFormValue(formData, "application_id");
   const documentType = getFormValue(formData, "document_type");
   const file = formData.get("file");
 
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false as const, error: "File is required." };
+  if (!applicationId) {
+    return { ok: false as const, error: "Application id is required." };
+  }
+
+  if (!APPLICATION_DOCUMENT_TYPES.has(documentType)) {
+    return { ok: false as const, error: "Invalid document type." };
+  }
+
+  const fileValidation = validateDocumentFile(file as File);
+  if (!fileValidation.ok) {
+    return { ok: false as const, error: fileValidation.error };
   }
 
   const uploadResult = await uploadApplicationFile({
     applicationId,
     documentType,
-    file
+    file: file as File
   });
 
   if (!uploadResult.ok) {
@@ -277,11 +431,14 @@ export async function uploadApplicationDocumentAction(formData: FormData) {
     application_id: applicationId,
     document_type: documentType,
     file_path: uploadResult.filePath,
-    original_file_name: file.name,
+    original_file_name: (file as File).name,
     uploaded_by: session?.user.id ?? null
   });
 
   if (insertError) {
+    await deleteFileFromCloudinary(uploadResult.filePath).catch((error) => {
+      console.error("Application upload cleanup failed", error);
+    });
     return { ok: false as const, error: insertError.message };
   }
 
@@ -291,8 +448,9 @@ export async function uploadApplicationDocumentAction(formData: FormData) {
   return { ok: true as const };
 }
 
-
 export async function deleteApplicationDocumentAction(formData: FormData) {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
 
   const applicationId = getFormValue(formData, "application_id");
@@ -326,11 +484,14 @@ export async function deleteApplicationDocumentAction(formData: FormData) {
   if (/^https?:\/\//i.test(document.file_path)) {
     try {
       await deleteFileFromCloudinary(document.file_path);
-    } catch {
-      // Best effort cleanup for external file storage.
+    } catch (error) {
+      console.error("Application document cleanup failed", error);
     }
   } else {
-    await supabase.storage.from("application-documents").remove([document.file_path]);
+    const { error: storageDeleteError } = await supabase.storage.from("application-documents").remove([document.file_path]);
+    if (storageDeleteError) {
+      console.error("Application document storage cleanup failed", storageDeleteError);
+    }
   }
 
   await logAudit("delete_application_document", "applications", applicationId, { document_id: documentId });
@@ -340,7 +501,10 @@ export async function deleteApplicationDocumentAction(formData: FormData) {
 
   return { ok: true as const };
 }
+
 export async function convertApplicationToEmployeeAction(input: unknown) {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
   const parsedResult = convertApplicationSchema.safeParse(input);
 
   if (!parsedResult.success) {
@@ -353,12 +517,16 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
 
   const { data: application, error: appError } = await supabase
     .from("applications")
-    .select("id, status, applicant_id, job_openings(role_type)")
+    .select("id, status, applicant_id, converted_employee_id, job_openings(role_type)")
     .eq("id", parsed.application_id)
     .single();
 
   if (appError || !application) {
     return { ok: false as const, error: appError?.message ?? "Application not found." };
+  }
+
+  if (application.converted_employee_id) {
+    return { ok: false as const, error: "Application is already converted." };
   }
 
   const jobRow = Array.isArray(application.job_openings) ? application.job_openings[0] : application.job_openings;
@@ -403,12 +571,21 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
     return { ok: false as const, error: employeeError?.message ?? "Employee conversion failed." };
   }
 
-  await supabase.from("applications").update({ converted_employee_id: employee.id }).eq("id", parsed.application_id);
+  const { error: appUpdateError } = await supabase.from("applications").update({ converted_employee_id: employee.id }).eq("id", parsed.application_id);
+  if (appUpdateError) {
+    await supabase.from("employees").delete().eq("id", employee.id);
+    return { ok: false as const, error: appUpdateError.message };
+  }
 
-  if (employee.role_type === "faculty") {
-    await supabase.from("faculty_profiles").insert({ employee_id: employee.id });
-  } else {
-    await supabase.from("staff_profiles").insert({ employee_id: employee.id });
+  const profileInsert =
+    employee.role_type === "faculty"
+      ? await supabase.from("faculty_profiles").insert({ employee_id: employee.id })
+      : await supabase.from("staff_profiles").insert({ employee_id: employee.id });
+
+  if (profileInsert.error) {
+    await supabase.from("applications").update({ converted_employee_id: null }).eq("id", parsed.application_id);
+    await supabase.from("employees").delete().eq("id", employee.id);
+    return { ok: false as const, error: profileInsert.error.message };
   }
 
   await logAudit("convert_application_to_employee", "applications", parsed.application_id, { employee_id: employee.id });
@@ -419,11 +596,6 @@ export async function convertApplicationToEmployeeAction(input: unknown) {
 
   return { ok: true as const, employeeId: employee.id };
 }
-
-
-
-
-
 
 
 

@@ -10,6 +10,18 @@ export type Database = {
           created_at: string;
           updated_at: string;
         };
+        Insert: {
+          id: string;
+          full_name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          full_name?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
       };
       user_roles: {
         Row: {
@@ -18,6 +30,20 @@ export type Database = {
           role: "super_admin" | "hr_admin" | "department_admin";
           created_at: string;
           updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          role: "super_admin" | "hr_admin" | "department_admin";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          role?: "super_admin" | "hr_admin" | "department_admin";
+          created_at?: string;
+          updated_at?: string;
         };
       };
       departments: {
@@ -74,6 +100,38 @@ export type Database = {
           converted_employee_id: string | null;
         };
       };
+      security_events: {
+        Row: {
+          id: string;
+          event: string;
+          scope: string;
+          key_hash: string;
+          retry_after_ms: number;
+          remaining: number;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event: string;
+          scope: string;
+          key_hash: string;
+          retry_after_ms: number;
+          remaining: number;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          event?: string;
+          scope?: string;
+          key_hash?: string;
+          retry_after_ms?: number;
+          remaining?: number;
+          metadata?: Json;
+          created_at?: string;
+        };
+      };
       employees: {
         Row: {
           id: string;
@@ -109,3 +167,7 @@ export type Database = {
     Enums: Record<string, never>;
   };
 };
+
+
+
+

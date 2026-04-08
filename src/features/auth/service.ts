@@ -23,7 +23,8 @@ export async function getCurrentUserRole(): Promise<AdminRole | null> {
     .from("user_roles")
     .select("role")
     .eq("user_id", user.id)
-    .order("created_at", { ascending: true })
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -48,7 +49,7 @@ export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
   const role = await getCurrentUserRole();
 
   if (!role || !allowedRoles.includes(role)) {
-    redirect("/dashboard?error=unauthorized");
+    redirect("/unauthorized");
   }
 
   return { user, role };

@@ -2,12 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireAdminRole } from "@/features/auth/service";
 import { createClient } from "@/lib/supabase/server";
 import { logAudit } from "@/lib/utils/audit";
 
 import { jobOpeningSchema } from "./schema";
 
+const JOB_MANAGEMENT_ROLES = ["super_admin", "hr_admin", "department_admin"] as const;
+
 export async function createJobOpeningAction(input: unknown) {
+  await requireAdminRole(JOB_MANAGEMENT_ROLES);
+
   const payload = jobOpeningSchema.parse(input);
   const supabase = await createClient();
 
@@ -36,6 +41,8 @@ export async function createJobOpeningAction(input: unknown) {
 }
 
 export async function updateJobOpeningAction(id: string, input: unknown) {
+  await requireAdminRole(JOB_MANAGEMENT_ROLES);
+
   const payload = jobOpeningSchema.parse(input);
   const supabase = await createClient();
 
@@ -62,6 +69,8 @@ export async function updateJobOpeningAction(id: string, input: unknown) {
 }
 
 export async function setJobOpeningStatusAction(id: string, status: "open" | "closed"): Promise<void> {
+  await requireAdminRole(JOB_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("job_openings").update({ status }).eq("id", id);

@@ -2,12 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 
+import { requireAdminRole } from "@/features/auth/service";
 import { logAudit } from "@/lib/utils/audit";
 import { createClient } from "@/lib/supabase/server";
 
 import { departmentSchema } from "./schema";
 
+const DEPARTMENT_MANAGEMENT_ROLES = ["super_admin", "hr_admin", "department_admin"] as const;
+
 export async function createDepartmentAction(input: unknown) {
+  await requireAdminRole(DEPARTMENT_MANAGEMENT_ROLES);
+
   const payload = departmentSchema.parse(input);
   const supabase = await createClient();
 
@@ -28,6 +33,8 @@ export async function createDepartmentAction(input: unknown) {
 }
 
 export async function toggleDepartmentAction(id: string, isActive: boolean): Promise<void> {
+  await requireAdminRole(DEPARTMENT_MANAGEMENT_ROLES);
+
   const supabase = await createClient();
 
   const { error } = await supabase.from("departments").update({ is_active: isActive }).eq("id", id);

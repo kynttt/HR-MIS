@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type Route } from "next";
 import { type ComponentType, type ReactNode } from "react";
-import { Briefcase, Building2, LayoutDashboard, ShieldCheck, Users, UserCog, FileStack } from "lucide-react";
+import { Briefcase, Building2, LayoutDashboard, ShieldAlert, ShieldCheck, Users, UserCog, FileStack } from "lucide-react";
 
 import { signOutAction } from "@/features/auth/actions";
 import { type AdminRole } from "@/lib/utils/constants";
@@ -20,13 +20,14 @@ const baseNavItems: Array<{ href: Route; label: string; icon: NavIcon }> = [
   { href: "/employees", label: "Employees", icon: Users }
 ];
 
-const superAdminItems: Array<{ href: Route; label: string; icon: NavIcon }> = [
-  { href: "/users", label: "User Management", icon: UserCog }
+const privilegedItems: Array<{ href: Route; label: string; icon: NavIcon }> = [
+  { href: "/users", label: "User Management", icon: UserCog },
+  { href: "/security-events", label: "Security Events", icon: ShieldAlert }
 ];
 
 export function AppShell({ children, role }: { children: ReactNode; role: AdminRole }) {
   const pathname = usePathname();
-  const navItems = role === "super_admin" ? [...baseNavItems, ...superAdminItems] : baseNavItems;
+  const navItems = role === "department_admin" ? baseNavItems : [...baseNavItems, ...privilegedItems];
   const hideSidebar = pathname === "/applications/pipeline";
 
   return (
@@ -92,3 +93,4 @@ export function AppShell({ children, role }: { children: ReactNode; role: AdminR
     </div>
   );
 }
+

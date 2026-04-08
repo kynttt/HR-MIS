@@ -15,9 +15,10 @@ export function QueryPagination({ page, pageSize, total }: QueryPaginationProps)
   const searchParams = useSearchParams();
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(Math.max(page, 1), totalPages);
 
-  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const to = total === 0 ? 0 : Math.min(page * pageSize, total);
+  const from = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const to = total === 0 ? 0 : Math.min(currentPage * pageSize, total);
 
   return (
     <div className="flex flex-col gap-3 border-t border-[#e5edf5] bg-[#ffffff] px-4 py-3 md:flex-row md:items-center md:justify-between">
@@ -25,18 +26,24 @@ export function QueryPagination({ page, pageSize, total }: QueryPaginationProps)
         Showing <span className="font-medium text-[#061b31]">{from}</span>-<span className="font-medium text-[#061b31]">{to}</span> of <span className="font-medium text-[#061b31]">{total}</span>
       </p>
       <Pagination
-        page={page}
+        page={currentPage}
         pageSize={pageSize}
         total={total}
         onPageChange={(targetPage) => {
           const nextPage = Math.min(Math.max(targetPage, 1), totalPages);
+          if (nextPage === currentPage) {
+            return;
+          }
+
           const params = new URLSearchParams(searchParams.toString());
           if (nextPage === 1) {
             params.delete("page");
           } else {
             params.set("page", String(nextPage));
           }
-          router.push(`?${params.toString()}`);
+
+          const queryString = params.toString();
+          router.push(queryString ? `?${queryString}` : "?");
         }}
       />
     </div>

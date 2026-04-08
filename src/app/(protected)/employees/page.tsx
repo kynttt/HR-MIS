@@ -10,12 +10,27 @@ import { SortHeader } from "@/components/ui/sort-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listDepartments } from "@/features/departments/service";
 import { listEmployeesPaginated } from "@/features/employees/service";
+import type { EmploymentStatus, RoleType } from "@/types/domain";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
 const PAGE_SIZE = 10;
+const ROLE_TYPES: readonly RoleType[] = ["faculty", "staff"];
+const EMPLOYMENT_STATUSES: readonly EmploymentStatus[] = ["active", "probationary", "resigned", "retired", "terminated"];
+
+function parseEnumValue<T extends string>(value: string | string[] | undefined, allowed: readonly T[]): T | undefined {
+  if (typeof value !== "string") return undefined;
+  return allowed.includes(value as T) ? (value as T) : undefined;
+}
+
+function parseActive(value: string | string[] | undefined): "true" | "false" | undefined {
+  if (value === "true" || value === "false") {
+    return value;
+  }
+  return undefined;
+}
 
 function toPositiveInt(value: string | string[] | undefined, fallback: number): number {
   if (typeof value !== "string") return fallback;
@@ -27,16 +42,22 @@ export default async function EmployeesPage({ searchParams }: Props) {
   const query = await searchParams;
 
   const q = typeof query.q === "string" ? query.q : "";
-  const roleType = typeof query.roleType === "string" ? query.roleType : "";
-  const departmentId = typeof query.departmentId === "string" ? query.departmentId : "";
-  const employmentStatus = typeof query.employmentStatus === "string" ? query.employmentStatus : "";
-  const active = typeof query.active === "string" ? query.active : "";
+  const roleType = parseEnumValue(query.roleType, ROLE_TYPES);
+  const departmentId = typeof query.departmentId === "string" ? query.departmentId : undefined;
+  const employmentStatus = parseEnumValue(query.employmentStatus, EMPLOYMENT_STATUSES);
+  const active = parseActive(query.active);
   const page = toPositiveInt(query.page, 1);
 
-  const [{ items: employees, total }, departments] = await Promise.all([
-    listEmployeesPaginated({ q, roleType, departmentId, employmentStatus, active }, page, PAGE_SIZE),
-    listDepartments()
-  ]);
+  let paginated = await listEmployeesPaginated({ q, roleType, departmentId, employmentStatus, active }, page, PAGE_SIZE);
+  const totalPages = Math.max(1, Math.ceil(paginated.total / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+
+  if (currentPage !== page) {
+    paginated = await listEmployeesPaginated({ q, roleType, departmentId, employmentStatus, active }, currentPage, PAGE_SIZE);
+  }
+
+  const { items: employees, total } = paginated;
+  const departments = await listDepartments();
 
   return (
     <div className="space-y-6">
@@ -44,27 +65,27 @@ export default async function EmployeesPage({ searchParams }: Props) {
 
       <form className="grid gap-2 rounded-lg border border-[#e5edf5] bg-[#f6f9fc] p-4 md:grid-cols-5">
         <Input defaultValue={q} name="q" placeholder="Search name/email/code" />
-        <Select defaultValue={roleType} name="roleType">
-          <option value="">All roles</option>
+        <Select defaultValue={roleType ?? ""} name="roleType">
+          <option value="">All role types</option>
           <option value="faculty">Faculty</option>
           <option value="staff">Staff</option>
         </Select>
-        <Select defaultValue={departmentId} name="departmentId">
+        <Select defaultValue={departmentId ?? ""} name="departmentId">
           <option value="">All departments</option>
           {departments.map((d) => (
             <option key={d.id} value={d.id}>{d.department_name}</option>
           ))}
         </Select>
-        <Select defaultValue={employmentStatus} name="employmentStatus">
-          <option value="">All status</option>
+        <Select defaultValue={employmentStatus ?? ""} name="employmentStatus">
+          <option value="">All employment statuses</option>
           <option value="active">Active</option>
           <option value="probationary">Probationary</option>
           <option value="resigned">Resigned</option>
           <option value="retired">Retired</option>
           <option value="terminated">Terminated</option>
         </Select>
-        <Select defaultValue={active} name="active">
-          <option value="">All</option>
+        <Select defaultValue={active ?? ""} name="active">
+          <option value="">All active states</option>
           <option value="true">Active only</option>
           <option value="false">Inactive only</option>
         </Select>
@@ -132,8 +153,9 @@ export default async function EmployeesPage({ searchParams }: Props) {
             </TableBody>
           </Table>
         </div>
-        <QueryPagination page={page} pageSize={PAGE_SIZE} total={total} />
+        <QueryPagination page={currentPage} pageSize={PAGE_SIZE} total={total} />
       </div>
     </div>
   );
 }
+
