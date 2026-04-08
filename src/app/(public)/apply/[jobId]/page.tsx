@@ -1,16 +1,21 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { ArrowLeft, Building2, Briefcase, CircleDot } from "lucide-react";
+import { z } from "zod";
 
 import { MultiStepApplyForm } from "@/components/applications/multi-step-form";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { listAppliedJobIdsForUser } from "@/features/applications/public-service";
+import { getCurrentUser } from "@/features/auth/service";
 import { getPublicJobOpeningDetails } from "@/features/jobs/service";
-import { resolvePublicOrganization } from "@/features/organizations/service";
 
 type Props = {
   params: Promise<{ jobId: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
+
+const orgSlugSchema = z.string().trim().toLowerCase().min(1).max(64).regex(/^[a-z0-9-]+$/);
 
 function toLabel(value: string): string {
   return value
@@ -19,24 +24,63 @@ function toLabel(value: string): string {
     .join(" ");
 }
 
+function buildLoginHref(nextPath: string): string {
+  const query = new URLSearchParams();
+  query.set("next", nextPath);
+  return `/login?${query.toString()}`;
+}
+
 export default async function PublicJobApplyPage({ params, searchParams }: Props) {
   const { jobId } = await params;
   const query = await searchParams;
 
-  const orgSlug = typeof query.org === "string" ? query.org : undefined;
-  const organization = await resolvePublicOrganization(orgSlug);
+  const rawOrg = query.org;
+  if (rawOrg !== undefined && typeof rawOrg !== "string") {
+    notFound();
+  }
+
+  let requestedOrgSlug: string | undefined;
+  if (typeof rawOrg === "string") {
+    const parsedOrg = orgSlugSchema.safeParse(rawOrg);
+    if (!parsedOrg.success) {
+      notFound();
+    }
+    requestedOrgSlug = parsedOrg.data;
+  }
 
   const isSuccess = query.success === "1";
   const errorMessage = typeof query.error === "string" ? query.error : null;
 
-  const job = await getPublicJobOpeningDetails(jobId, organization.id);
+  let job: Awaited<ReturnType<typeof getPublicJobOpeningDetails>>;
+  try {
+    job = await getPublicJobOpeningDetails(jobId);
+  } catch {
+    notFound();
+  }
+
+  if (requestedOrgSlug && requestedOrgSlug !== job.organization_slug) {
+    notFound();
+  }
+
+  const returnPath = requestedOrgSlug ? `/apply/${job.id}?org=${job.organization_slug}` : `/apply/${job.id}`;
+  const loginHref = buildLoginHref(returnPath);
+
+  const user = await getCurrentUser();
+  const appliedJobIds = user
+    ? await listAppliedJobIdsForUser({
+        userId: user.id,
+        organizationId: job.organization_id,
+        jobIds: [job.id]
+      })
+    : new Set<string>();
+  const alreadyApplied = user ? appliedJobIds.has(job.id) : false;
 
   return (
     <div className="px-4 py-8 lg:px-8 lg:py-10">
       <div className="mb-5">
         <Link
           className="inline-flex items-center gap-2 text-sm text-[#533afd] transition-colors hover:text-[#4434d4]"
-          href={`/apply?org=${organization.slug}`}
+          href={requestedOrgSlug ? { pathname: "/apply", query: { org: job.organization_slug } } : "/apply"}
         >
           <ArrowLeft className="h-4 w-4" />
           Back to job listings
@@ -46,7 +90,7 @@ export default async function PublicJobApplyPage({ params, searchParams }: Props
       <div className="grid gap-6 xl:grid-cols-12">
         <aside className="space-y-5 xl:col-span-4">
           <Card className="rounded-xl border border-[#e5edf5] bg-white p-6 shadow-[0_18px_40px_-34px_rgba(6,27,49,0.55)] xl:sticky xl:top-24">
-            <p className="code-label text-[11px] uppercase tracking-[0.12em] text-[#64748d]">{organization.name}</p>
+            <p className="code-label text-[11px] uppercase tracking-[0.12em] text-[#64748d]">{job.organization_name}</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[#061b31]">{job.job_title}</h1>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -93,20 +137,47 @@ export default async function PublicJobApplyPage({ params, searchParams }: Props
             </div>
 
             <div className="mt-7">
-              <MultiStepApplyForm
-                jobs={[
-                  {
-                    id: job.id,
-                    job_title: job.job_title,
-                    department_name: job.department_name,
-                    role_type: job.role_type
-                  }
-                ]}
-                fixedJobId={job.id}
-                returnPath={`/apply/${job.id}?org=${organization.slug}`}
-                isSuccess={isSuccess}
-                errorMessage={errorMessage}
-              />
+              {!user ? (
+                <div className="space-y-4 rounded-xl border border-[#d6d9fc] bg-white p-6">
+                  <h3 className="text-lg font-semibold text-[#061b31]">Sign in to continue</h3>
+                  <p className="text-sm text-[#64748d]">You can browse job openings publicly, but submitting an application requires an account.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <a className="inline-flex items-center rounded-md bg-[#533afd] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#4434d4]" href={loginHref}>
+                      Sign in
+                    </a>
+                    <Link className="inline-flex items-center rounded-md border border-[#d6d9fc] bg-white px-4 py-2 text-sm font-medium text-[#4434d4] transition-colors hover:bg-[#f4f6ff]" href="/register">
+                      Create account
+                    </Link>
+                  </div>
+                </div>
+              ) : alreadyApplied ? (
+                <div className="space-y-3 rounded-xl border border-emerald-200 bg-emerald-50 p-6">
+                  <h3 className="text-lg font-semibold text-emerald-800">Application already submitted</h3>
+                  <p className="text-sm text-emerald-700">Your account has already submitted an application for this role.</p>
+                  <Link
+                    className="inline-flex items-center rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
+                    href={requestedOrgSlug ? { pathname: "/apply", query: { org: job.organization_slug, job: job.id } } : { pathname: "/apply", query: { job: job.id } }}
+                  >
+                    Back to job board
+                  </Link>
+                </div>
+              ) : (
+                <MultiStepApplyForm
+                  jobs={[
+                    {
+                      id: job.id,
+                      job_title: job.job_title,
+                      department_name: job.department_name,
+                      role_type: job.role_type
+                    }
+                  ]}
+                  fixedJobId={job.id}
+                  returnPath={returnPath}
+                  isSuccess={isSuccess}
+                  errorMessage={errorMessage}
+                  lockedEmail={user.email ?? undefined}
+                />
+              )}
             </div>
           </Card>
         </section>
@@ -114,3 +185,4 @@ export default async function PublicJobApplyPage({ params, searchParams }: Props
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-export type UserRole = "super_admin" | "hr_admin" | "department_admin";
+export type UserRole = "super_admin" | "hr_admin" | "department_admin" | "user";
 export type RoleType = "faculty" | "staff";
 export type EmploymentType = "full_time" | "part_time" | "contractual" | "job_order";
 export type EmploymentStatus = "active" | "probationary" | "resigned" | "retired" | "terminated";

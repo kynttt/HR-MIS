@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CheckCircle2, FileText, UserRound } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -41,6 +41,7 @@ interface MultiStepApplyFormProps {
   errorMessage?: string | null;
   fixedJobId?: string;
   returnPath?: string;
+  lockedEmail?: string;
 }
 
 function StepIndicator({ current }: { current: number }) {
@@ -87,12 +88,14 @@ function PersonalInfoStep({
   jobs,
   onNext,
   defaultValues,
-  fixedJobId
+  fixedJobId,
+  lockedEmail
 }: {
   jobs: JobOption[];
   onNext: (data: PersonalInfo) => void;
   defaultValues?: Partial<PersonalInfo>;
   fixedJobId?: string;
+  lockedEmail?: string;
 }) {
   const {
     register,
@@ -102,7 +105,8 @@ function PersonalInfoStep({
     resolver: zodResolver(personalInfoSchema),
     defaultValues: {
       ...defaultValues,
-      job_opening_id: defaultValues?.job_opening_id ?? fixedJobId ?? ""
+      job_opening_id: defaultValues?.job_opening_id ?? fixedJobId ?? "",
+      email: defaultValues?.email ?? lockedEmail ?? ""
     }
   });
 
@@ -153,7 +157,8 @@ function PersonalInfoStep({
           </div>
           <div className="md:col-span-5">
             <Label required>Email</Label>
-            <Input {...register("email")} type="email" placeholder="maria@example.com" />
+            <Input {...register("email")} type="email" placeholder="maria@example.com" readOnly={Boolean(lockedEmail)} />
+            {lockedEmail ? <p className="mt-1 text-xs text-[#64748d]">Using your signed-in account email.</p> : null}
             <FieldError message={errors.email?.message} />
           </div>
           <div className="md:col-span-4">
@@ -300,7 +305,7 @@ function SuccessState() {
   );
 }
 
-export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, returnPath }: MultiStepApplyFormProps) {
+export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, returnPath, lockedEmail }: MultiStepApplyFormProps) {
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState<PersonalInfo | null>(null);
   const [files, setFiles] = useState<Record<string, File[]>>({
@@ -310,6 +315,12 @@ export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, 
     certificates: []
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (errorMessage || isSuccess) {
+      setIsSubmitting(false);
+    }
+  }, [errorMessage, isSuccess]);
 
   if (isSuccess) {
     return <SuccessState />;
@@ -376,6 +387,7 @@ export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, 
             setStep(1);
           }}
           defaultValues={formData ?? undefined}
+          lockedEmail={lockedEmail}
         />
       ) : null}
 
@@ -387,3 +399,4 @@ export function MultiStepApplyForm({ jobs, isSuccess, errorMessage, fixedJobId, 
     </div>
   );
 }
+

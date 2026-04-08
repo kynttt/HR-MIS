@@ -10,7 +10,7 @@ import { logAudit } from "@/lib/utils/audit";
 
 import { createUserSchema, inviteUserSchema, updateUserRoleSchema } from "./schema";
 
-type ManagedRole = "super_admin" | "hr_admin" | "department_admin";
+type ManagedRole = "super_admin" | "hr_admin" | "department_admin" | "user";
 
 function getInviteRedirectTo(): string | undefined {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -151,8 +151,8 @@ export async function updateManagedUserRoleAction(input: unknown) {
 
   const payload = updateUserRoleSchema.parse(input);
 
-  if (payload.user_id === user.id && payload.role === "department_admin") {
-    return { ok: false as const, error: "You cannot downgrade your own account to department_admin from this panel." };
+  if (payload.user_id === user.id && (payload.role === "department_admin" || payload.role === "user")) {
+    return { ok: false as const, error: "You cannot downgrade your own account to department_admin or user from this panel." };
   }
 
   try {
@@ -169,3 +169,4 @@ export async function updateManagedUserRoleAction(input: unknown) {
   revalidatePath("/users");
   return { ok: true as const };
 }
+

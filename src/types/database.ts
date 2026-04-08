@@ -40,21 +40,21 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
-          role: "super_admin" | "hr_admin" | "department_admin";
+          role: "super_admin" | "hr_admin" | "department_admin" | "user";
           created_at: string;
           updated_at: string;
         };
         Insert: {
           id?: string;
           user_id: string;
-          role: "super_admin" | "hr_admin" | "department_admin";
+          role: "super_admin" | "hr_admin" | "department_admin" | "user";
           created_at?: string;
           updated_at?: string;
         };
         Update: {
           id?: string;
           user_id?: string;
-          role?: "super_admin" | "hr_admin" | "department_admin";
+          role?: "super_admin" | "hr_admin" | "department_admin" | "user";
           created_at?: string;
           updated_at?: string;
         };
@@ -91,6 +91,7 @@ export type Database = {
         Row: {
           id: string;
           organization_id: string;
+          auth_user_id: string | null;
           first_name: string;
           middle_name: string | null;
           last_name: string;
@@ -110,6 +111,7 @@ export type Database = {
           id: string;
           organization_id: string;
           applicant_id: string;
+          submitted_by_user_id: string | null;
           job_opening_id: string;
           status: import("@/types/domain").ApplicationStatus;
           submitted_at: string;
@@ -185,3 +187,5 @@ export type Database = {
     Enums: Record<string, never>;
   };
 };
+
+

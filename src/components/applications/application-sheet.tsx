@@ -1,4 +1,4 @@
-﻿"use client"
+"use client"
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
@@ -211,7 +211,7 @@ export function ApplicationSheet({ applicationId, onClose }: ApplicationSheetPro
                           <div className="mt-1.5 h-2 w-2 rounded-full bg-[#533afd] shrink-0" />
                           <div>
                             <p className="text-sm text-[#061b31]">
-                              {item.from_status ? `${item.from_status.replaceAll("_", " ")} â†’ ` : ""}
+                              {item.from_status ? `${item.from_status.replaceAll("_", " ")} -> ` : ""}
                               <span className="text-[#533afd]">{item.to_status.replaceAll("_", " ")}</span>
                             </p>
                             <p className="text-xs text-[#64748d]">

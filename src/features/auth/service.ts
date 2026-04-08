@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import { ADMIN_ROLES, type AdminRole } from "@/lib/utils/constants";
+import { isAdminRole, type AdminRole, type AppUserRole } from "@/lib/utils/constants";
 
 export async function getCurrentUser() {
   const supabase = await createClient();
@@ -11,7 +11,7 @@ export async function getCurrentUser() {
   return user;
 }
 
-export async function getCurrentUserRole(): Promise<AdminRole | null> {
+export async function getCurrentUserRole(): Promise<AppUserRole | null> {
   const user = await getCurrentUser();
 
   if (!user) {
@@ -32,11 +32,17 @@ export async function getCurrentUserRole(): Promise<AdminRole | null> {
     return null;
   }
 
-  if (!ADMIN_ROLES.includes(data.role)) {
-    return null;
-  }
-
   return data.role;
+}
+
+export async function getCurrentAdminRole(): Promise<AdminRole | null> {
+  const role = await getCurrentUserRole();
+  return isAdminRole(role) ? role : null;
+}
+
+export async function getAuthenticatedHomePath(): Promise<"/dashboard" | "/profile"> {
+  const role = await getCurrentUserRole();
+  return isAdminRole(role) ? "/dashboard" : "/profile";
 }
 
 export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
@@ -48,9 +54,10 @@ export async function requireAdminRole(allowedRoles: readonly AdminRole[]) {
 
   const role = await getCurrentUserRole();
 
-  if (!role || !allowedRoles.includes(role)) {
+  if (!isAdminRole(role) || !allowedRoles.includes(role)) {
     redirect("/unauthorized");
   }
 
   return { user, role };
 }
+

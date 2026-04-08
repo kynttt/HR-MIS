@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const userRoleSchema = z.enum(["super_admin", "hr_admin", "department_admin"]);
+export const userRoleSchema = z.enum(["super_admin", "hr_admin", "department_admin", "user"]);
 
 export const inviteUserSchema = z.object({
   full_name: z.string().min(2).max(120),

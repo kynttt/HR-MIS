@@ -4,7 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { env } from "@/lib/validation/env";
 import type { Database } from "@/types/database";
 
-const protectedPaths = ["/dashboard", "/applications", "/departments", "/jobs", "/employees", "/users"];
+const protectedPaths = ["/dashboard", "/applications", "/departments", "/jobs", "/employees", "/users", "/profile"];
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
@@ -35,8 +35,22 @@ export async function middleware(request: NextRequest) {
   }
 
   if ((request.nextUrl.pathname === "/login" || request.nextUrl.pathname === "/register") && user) {
+    const nextPath = request.nextUrl.searchParams.get("next");
+    const nextPathname = typeof nextPath === "string" ? nextPath.split("?")[0] : null;
+    const isSafeNextPath =
+      typeof nextPath === "string" &&
+      nextPath.startsWith("/") &&
+      typeof nextPathname === "string" &&
+      !nextPathname.startsWith("/login") &&
+      !nextPathname.startsWith("/register");
+
+    if (isSafeNextPath && typeof nextPath === "string") {
+      return NextResponse.redirect(new URL(nextPath, request.url));
+    }
+
     const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/dashboard";
+    redirectUrl.pathname = "/profile";
+    redirectUrl.search = "";
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -46,3 +60,5 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
 };
+
+

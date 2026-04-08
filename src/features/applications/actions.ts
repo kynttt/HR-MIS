@@ -1,9 +1,9 @@
-﻿"use server";
+"use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { requireAdminRole } from "@/features/auth/service";
+import { getCurrentUser, requireAdminRole } from "@/features/auth/service";
 import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import { deleteFileFromCloudinary, uploadFileToCloudinary } from "@/lib/cloudinary/server";
 import { logRateLimitBlockedEvent } from "@/lib/security/logging";
@@ -27,11 +27,31 @@ function getSafeReturnPath(formData: FormData): string {
   return raw;
 }
 
-function withQuery(path: string, key: "success" | "error", value: string): string {
+function withQuery(path: string, key: "success" | "error" | "already_applied", value: string): string {
   const separator = path.includes("?") ? "&" : "?";
   return `${path}${separator}${key}=${value}`;
 }
 
+function getLoginPath(nextPath: string): string {
+  const query = new URLSearchParams();
+  query.set("next", nextPath);
+  return `/login?${query.toString()}`;
+}
+
+function getPublicApplyBoardPath(path: string, jobOpeningId: string): string {
+  const [, rawQuery = ""] = path.split("?");
+  const source = new URLSearchParams(rawQuery);
+  const target = new URLSearchParams();
+  const org = source.get("org");
+
+  if (org) {
+    target.set("org", org);
+  }
+
+  target.set("job", jobOpeningId);
+  target.set("applied_job", jobOpeningId);
+  return `/apply?${target.toString()}`;
+}
 function isAbsoluteUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
@@ -119,6 +139,30 @@ function getFormValue(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+async function hasExistingApplicationForJob(params: {
+  supabase: ReturnType<typeof createAdminClient>;
+  organizationId: string;
+  jobOpeningId: string;
+  userId: string;
+}): Promise<boolean> {
+  const { supabase, organizationId, jobOpeningId, userId } = params;
+
+  const { data: existingApplication, error: existingApplicationError } = await supabase
+    .from("applications")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("job_opening_id", jobOpeningId)
+    .eq("submitted_by_user_id", userId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingApplicationError) {
+    throw new Error(existingApplicationError.message);
+  }
+
+  return Boolean(existingApplication);
+}
+
 async function uploadApplicationFile(params: {
   applicationId: string;
   documentType: string;
@@ -144,6 +188,17 @@ export async function updateApplicationStatus(
 
 export async function submitApplicationAction(formData: FormData) {
   const returnPath = getSafeReturnPath(formData);
+  const user = await getCurrentUser();
+
+  if (!user) {
+    redirect(getLoginPath(returnPath));
+  }
+
+  const accountEmail = user.email?.trim().toLowerCase();
+  if (!accountEmail) {
+    redirect(withQuery(returnPath, "error", encodeURIComponent("Your account is missing an email address.")));
+  }
+
   const fingerprint = await getRequestFingerprint("apply");
   const globalRateLimitKey = `${fingerprint}:global`;
   const globalLimit = await enforceRateLimit({ key: globalRateLimitKey, max: 10, windowMs: 10 * 60_000 });
@@ -188,44 +243,89 @@ export async function submitApplicationAction(formData: FormData) {
     redirect(withQuery(returnPath, "error", encodeURIComponent("Selected job opening is unavailable.")));
   }
 
-  const emailRateLimitKey = `apply:email:${parsed.email.toLowerCase()}`;
-  const emailLimit = await enforceRateLimit({
-    key: emailRateLimitKey,
+  const existingApplication = await hasExistingApplicationForJob({
+    supabase,
+    organizationId: job.organization_id,
+    jobOpeningId: parsed.job_opening_id,
+    userId: user.id
+  });
+
+  if (existingApplication) {
+    const boardPath = getPublicApplyBoardPath(returnPath, parsed.job_opening_id);
+    redirect(withQuery(boardPath, "already_applied", "1"));
+  }
+
+  const userRateLimitKey = `apply:user:${user.id}`;
+  const userLimit = await enforceRateLimit({
+    key: userRateLimitKey,
     max: 3,
     windowMs: 10 * 60_000
   });
 
-  if (!emailLimit.ok) {
+  if (!userLimit.ok) {
     await logRateLimitBlockedEvent({
-      scope: "apply.submit.email",
-      key: emailRateLimitKey,
-      retryAfterMs: emailLimit.retryAfterMs,
-      remaining: emailLimit.remaining
+      scope: "apply.submit.user",
+      key: userRateLimitKey,
+      retryAfterMs: userLimit.retryAfterMs,
+      remaining: userLimit.remaining
     });
-    redirect(withQuery(returnPath, "error", encodeURIComponent("Too many attempts for this email. Please try again later.")));
+    redirect(withQuery(returnPath, "error", encodeURIComponent("Too many attempts for your account. Please try again later.")));
   }
 
-  const uploadedCloudinaryUrls: string[] = [];
-  const applicantId = crypto.randomUUID();
+  const { data: existingApplicant, error: existingApplicantError } = await supabase
+    .from("applicants")
+    .select("id")
+    .eq("organization_id", job.organization_id)
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (existingApplicantError) {
+    throw new Error(existingApplicantError.message);
+  }
+
+  const createdApplicantId = existingApplicant?.id ? null : crypto.randomUUID();
+  const applicantId = existingApplicant?.id ?? createdApplicantId ?? crypto.randomUUID();
   const applicationId = crypto.randomUUID();
+  const uploadedCloudinaryUrls: string[] = [];
 
   try {
-    const { error: applicantError } = await supabase
-      .from("applicants")
-      .insert({
-        id: applicantId,
-        organization_id: job.organization_id,
-        first_name: parsed.first_name,
-        middle_name: parsed.middle_name ?? null,
-        last_name: parsed.last_name,
-        suffix: parsed.suffix ?? null,
-        email: parsed.email,
-        phone: parsed.phone ?? null,
-        address: parsed.address ?? null
-      });
+    if (existingApplicant) {
+      const { error: applicantUpdateError } = await supabase
+        .from("applicants")
+        .update({
+          first_name: parsed.first_name,
+          middle_name: parsed.middle_name ?? null,
+          last_name: parsed.last_name,
+          suffix: parsed.suffix ?? null,
+          email: accountEmail,
+          phone: parsed.phone ?? null,
+          address: parsed.address ?? null
+        })
+        .eq("id", applicantId)
+        .eq("organization_id", job.organization_id);
 
-    if (applicantError) {
-      throw new Error(applicantError?.message ?? "Failed to create applicant record.");
+      if (applicantUpdateError) {
+        throw new Error(applicantUpdateError.message);
+      }
+    } else {
+      const { error: applicantError } = await supabase
+        .from("applicants")
+        .insert({
+          id: applicantId,
+          auth_user_id: user.id,
+          organization_id: job.organization_id,
+          first_name: parsed.first_name,
+          middle_name: parsed.middle_name ?? null,
+          last_name: parsed.last_name,
+          suffix: parsed.suffix ?? null,
+          email: accountEmail,
+          phone: parsed.phone ?? null,
+          address: parsed.address ?? null
+        });
+
+      if (applicantError) {
+        throw new Error(applicantError?.message ?? "Failed to create applicant record.");
+      }
     }
 
     const { error: applicationError } = await supabase
@@ -233,6 +333,7 @@ export async function submitApplicationAction(formData: FormData) {
       .insert({
         id: applicationId,
         applicant_id: applicantId,
+        submitted_by_user_id: user.id,
         job_opening_id: parsed.job_opening_id,
         organization_id: job.organization_id,
         status: "submitted"
@@ -298,7 +399,7 @@ export async function submitApplicationAction(formData: FormData) {
       throw new Error(statusHistoryError.message);
     }
 
-    await logAudit("submit_application", "applications", applicationId, { email: parsed.email }).catch((error) => {
+    await logAudit("submit_application", "applications", applicationId, { email: accountEmail, auth_user_id: user.id }).catch((error) => {
       console.error("Audit log failed for submit_application", error);
     });
 
@@ -318,7 +419,9 @@ export async function submitApplicationAction(formData: FormData) {
     await supabase.from("application_documents").delete().eq("application_id", applicationId);
     await supabase.from("application_status_history").delete().eq("application_id", applicationId);
     await supabase.from("applications").delete().eq("id", applicationId);
-    await supabase.from("applicants").delete().eq("id", applicantId);
+    if (createdApplicantId) {
+      await supabase.from("applicants").delete().eq("id", createdApplicantId);
+    }
 
     await cleanupCloudinaryUrls(uploadedCloudinaryUrls);
 
