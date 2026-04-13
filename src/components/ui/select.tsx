@@ -172,7 +172,7 @@ const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
               className="z-50 overflow-hidden rounded-md border border-[#d6d9fc] bg-white text-[#061b31] shadow-lg"
               position="popper"
             >
-              <SelectPrimitive.Viewport className="p-1">
+              <SelectPrimitive.Viewport className="max-h-72 overflow-y-auto p-1">
                 {radixItems.map((item) => (
                   <SelectPrimitive.Item
                     className="relative flex cursor-default select-none items-center rounded-sm py-2 pl-8 pr-2 text-sm outline-none focus:bg-[#eef4ff] data-[disabled]:pointer-events-none data-[disabled]:opacity-50"

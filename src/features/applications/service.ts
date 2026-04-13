@@ -7,6 +7,7 @@ export type ApplicationFilters = {
   status?: ApplicationStatus;
   departmentId?: string;
   roleType?: RoleType;
+  jobOpeningId?: string;
 };
 
 export type PaginatedApplicationsResult = {
@@ -69,10 +70,10 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
 
   const keyword = filters.q?.trim() ?? "";
   const applicantJoin = keyword ? "applicants!inner(first_name, last_name, email)" : "applicants(first_name, last_name, email)";
-  const requiresJobInnerJoin = Boolean(filters.roleType || filters.departmentId);
+  const requiresJobInnerJoin = Boolean(filters.roleType || filters.departmentId || filters.jobOpeningId);
   const jobOpeningsJoin = requiresJobInnerJoin
-    ? "job_openings!inner(job_title, role_type, department_id, departments(id, department_name))"
-    : "job_openings(job_title, role_type, department_id, departments(id, department_name))";
+    ? "job_openings!inner(id, job_title, role_type, department_id, departments(id, department_name))"
+    : "job_openings(id, job_title, role_type, department_id, departments(id, department_name))";
 
   let query = supabase
     .from("applications")
@@ -90,6 +91,10 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
 
   if (filters.departmentId) {
     query = query.eq("job_openings.department_id", filters.departmentId);
+  }
+
+  if (filters.jobOpeningId) {
+    query = query.eq("job_openings.id", filters.jobOpeningId);
   }
 
   if (keyword) {
@@ -205,10 +210,10 @@ export async function listApplicationsPaginated(
 
   const keyword = filters.q?.trim() ?? "";
   const applicantJoin = keyword ? "applicants!inner(first_name, last_name, email)" : "applicants(first_name, last_name, email)";
-  const requiresJobInnerJoin = Boolean(filters.roleType || filters.departmentId);
+  const requiresJobInnerJoin = Boolean(filters.roleType || filters.departmentId || filters.jobOpeningId);
   const jobOpeningsJoin = requiresJobInnerJoin
-    ? "job_openings!inner(job_title, role_type, department_id, departments(id, department_name))"
-    : "job_openings(job_title, role_type, department_id, departments(id, department_name))";
+    ? "job_openings!inner(id, job_title, role_type, department_id, departments(id, department_name))"
+    : "job_openings(id, job_title, role_type, department_id, departments(id, department_name))";
 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
@@ -230,6 +235,10 @@ export async function listApplicationsPaginated(
 
   if (filters.departmentId) {
     query = query.eq("job_openings.department_id", filters.departmentId);
+  }
+
+  if (filters.jobOpeningId) {
+    query = query.eq("job_openings.id", filters.jobOpeningId);
   }
 
   if (keyword) {
