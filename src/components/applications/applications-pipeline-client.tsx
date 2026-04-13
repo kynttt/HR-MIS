@@ -1,24 +1,29 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { KanbanSquare } from "lucide-react"
 import { toast } from "sonner"
 
 import { ApplicationSheet } from "@/components/applications/application-sheet"
 import { PipelineBoard } from "@/components/applications/pipeline/pipeline-board"
+import { Select } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { updateApplicationStatus } from "@/features/applications/actions"
 import type { ApplicationListItem } from "@/features/applications/service"
+import type { JobOpeningListItem } from "@/features/jobs/service"
 import { useApplicationsStore } from "@/features/applications/store"
 
 interface ApplicationsPipelineClientProps {
   applications: ApplicationListItem[]
+  activeRoleOpenings: JobOpeningListItem[]
+  selectedRoleOpeningId: string
 }
 
-function ApplicationsPipelineClient({ applications }: ApplicationsPipelineClientProps) {
+function ApplicationsPipelineClient({ applications, activeRoleOpenings, selectedRoleOpeningId }: ApplicationsPipelineClientProps) {
   const [sheetId, setSheetId] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const {
     applications: pipelineState,
@@ -67,6 +72,18 @@ function ApplicationsPipelineClient({ applications }: ApplicationsPipelineClient
     }
   }
 
+  const handleRoleOpeningChange = (nextRoleOpeningId: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+
+    if (nextRoleOpeningId) {
+      params.set("jobOpeningId", nextRoleOpeningId)
+    } else {
+      params.delete("jobOpeningId")
+    }
+
+    router.push(`/applications/pipeline${params.toString() ? `?${params.toString()}` : ""}`)
+  }
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-[#e5edf5] bg-[#ffffff] p-5">
@@ -76,6 +93,16 @@ function ApplicationsPipelineClient({ applications }: ApplicationsPipelineClient
           Pipeline Board
         </h2>
         <p className="mt-1 text-sm text-[#64748d]">Drag and drop cards to update application status instantly.</p>
+        <div className="mt-4 max-w-xl">
+          <Select name="jobOpeningId" value={selectedRoleOpeningId} onChange={(event) => handleRoleOpeningChange(event.target.value)}>
+            <option value="">All active role openings</option>
+            {activeRoleOpenings.map((opening) => (
+              <option key={opening.id} value={opening.id}>
+                {opening.job_title} - {opening.department_name ?? "No department"} ({opening.role_type})
+              </option>
+            ))}
+          </Select>
+        </div>
       </div>
 
       <Tabs value="pipeline" onValueChange={(v) => v === "list" && router.push("/applications")}>

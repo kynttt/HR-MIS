@@ -49,7 +49,7 @@ export default async function LoginPage({ searchParams }: Props) {
         </ul>
       </section>
 
-      <section className="flex items-center justify-center lg:justify-end">
+      <section className="flex items-center justify-center">
         <div className="w-full max-w-md rounded-2xl border border-[#e5edf5] bg-[#ffffff] p-6 sm:p-8">
           <p className="code-label text-xs text-[#64748d]">Account Access</p>
           <h2 className="mt-2 font-display text-3xl font-medium text-[#061b31]">Sign in to continue</h2>

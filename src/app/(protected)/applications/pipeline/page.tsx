@@ -1,5 +1,6 @@
 import { ApplicationsPipelineClient } from "@/components/applications/applications-pipeline-client";
 import { listApplications } from "@/features/applications/service";
+import { listJobOpenings } from "@/features/jobs/service";
 import type { ApplicationStatus, RoleType } from "@/types/domain";
 
 type Props = {
@@ -30,8 +31,11 @@ export default async function ApplicationsPipelinePage({ searchParams }: Props) 
   const status = parseEnumValue(query.status, APPLICATION_STATUSES);
   const departmentId = typeof query.departmentId === "string" ? query.departmentId : undefined;
   const roleType = parseEnumValue(query.roleType, ROLE_TYPES);
+  const activeRoleOpenings = await listJobOpenings({ status: "open" });
+  const activeRoleOpeningIds = new Set(activeRoleOpenings.map((opening) => opening.id));
+  const jobOpeningId = typeof query.jobOpeningId === "string" && activeRoleOpeningIds.has(query.jobOpeningId) ? query.jobOpeningId : undefined;
 
-  const applications = await listApplications({ q, status, departmentId, roleType });
+  const applications = await listApplications({ q, status, departmentId, roleType, jobOpeningId });
 
-  return <ApplicationsPipelineClient applications={applications} />;
+  return <ApplicationsPipelineClient applications={applications} activeRoleOpenings={activeRoleOpenings} selectedRoleOpeningId={jobOpeningId ?? ""} />;
 }
