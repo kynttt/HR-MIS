@@ -87,8 +87,12 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
     try {
       const params = new URLSearchParams();
       params.set("provider", config.provider);
+
       if (config.provider === "ollama") {
         params.set("baseUrl", config.ollamaBaseUrl || "http://localhost:11434");
+      } else if ((config.provider === "openai" || config.provider === "gemini") && config.apiKey) {
+        // Pass API key to fetch available models from cloud providers
+        params.set("apiKey", config.apiKey);
       }
 
       const response = await fetch(`/api/ai/models?${params.toString()}`);
@@ -121,12 +125,12 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
     } finally {
       setIsLoadingModels(false);
     }
-  }, [config.provider, config.ollamaBaseUrl]);
+  }, [config.provider, config.ollamaBaseUrl, config.apiKey]);
 
   // Fetch models on initial load and when provider changes
   useEffect(() => {
     fetchModels();
-  }, [fetchModels]);
+  }, [fetchModels, config.provider, config.ollamaBaseUrl, config.apiKey]);
 
   const handleProviderChange = (provider: AIProvider) => {
     setConfig((prev) => ({
@@ -275,6 +279,17 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
                 Refresh
               </Button>
             </div>
+
+            {/* Info message for cloud providers without API key */}
+            {providerInfo.requiresApiKey && !config.apiKey && !isLoadingModels && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <p className="text-xs text-blue-700">
+                  <strong>Tip:</strong> Enter your API key above and click Refresh to fetch
+                  all available models from {providerInfo.name}. Without an API key, only
+                  common models are shown.
+                </p>
+              </div>
+            )}
 
             {isLoadingModels ? (
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
