@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, Pencil, Users, Power, Eye } from "lucide-react";
+import { MoreHorizontal, Pencil, Users, Power } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -36,8 +36,8 @@ export function JobRowActions({ job }: JobRowActionsProps) {
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem asChild>
           {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-          <Link href={`/jobs/${job.id}/edit` as any} className="flex cursor-pointer items-center">
-            <Pencil className="mr-2 h-4 w-4 text-[#533afd]" />
+          <Link href={`/jobs/${job.id}/edit` as any} className="flex cursor-pointer items-center gap-2">
+            <Pencil className="h-4 w-4 text-[#533afd]" />
             <span>Edit</span>
           </Link>
         </DropdownMenuItem>
@@ -53,16 +53,16 @@ export function JobRowActions({ job }: JobRowActionsProps) {
           >
             <button
               type="submit"
-              className="flex w-full cursor-pointer items-center px-2 py-1.5 text-sm"
+              className="flex w-full cursor-pointer items-center gap-2"
             >
-              <Power className="mr-2 h-4 w-4 text-[#64748d]" />
+              <Power className="h-4 w-4 text-[#64748d]" />
               <span>{job.status === "open" ? "Close" : "Open"}</span>
             </button>
           </form>
         </DropdownMenuItem>
 
-        <DropdownMenuItem onClick={() => onViewApplicants(job)}>
-          <Users className="mr-2 h-4 w-4 text-[#533afd]" />
+        <DropdownMenuItem onClick={() => onViewApplicants(job)} className="flex cursor-pointer items-center gap-2">
+          <Users className="h-4 w-4 text-[#533afd]" />
           <span>View Applicants</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
