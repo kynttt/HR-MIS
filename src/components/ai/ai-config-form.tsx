@@ -102,10 +102,17 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
           const isSelected = config.provider === provider;
 
           return (
-            <button
+            <div
               key={provider}
               onClick={() => handleProviderChange(provider)}
-              className={`relative rounded-xl border p-5 text-left transition-all ${
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  handleProviderChange(provider);
+                }
+              }}
+              className={`relative cursor-pointer rounded-xl border p-5 text-left transition-all ${
                 isSelected
                   ? "border-[#533afd] bg-[#f4f6ff] shadow-[0_18px_38px_-30px_rgba(83,58,253,0.45)]"
                   : "border-[#e5edf5] bg-white hover:border-[#d6d9fc] hover:shadow-md"
@@ -134,7 +141,7 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
                   No API Key
                 </Badge>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -209,12 +216,19 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
             {/* Model Cards */}
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {currentModels.map((model) => (
-                <button
+                <div
                   key={model.id}
                   onClick={() =>
                     setConfig((prev) => ({ ...prev, model: model.id }))
                   }
-                  className={`relative rounded-lg border p-4 text-left transition-all ${
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      setConfig((prev) => ({ ...prev, model: model.id }));
+                    }
+                  }}
+                  className={`relative cursor-pointer rounded-lg border p-4 text-left transition-all ${
                     config.model === model.id
                       ? "border-[#533afd] bg-[#f4f6ff]"
                       : "border-[#e5edf5] hover:border-[#d6d9fc]"
@@ -238,7 +252,7 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
                       <Check className="h-2.5 w-2.5" />
                     </div>
                   )}
-                </button>
+                </div>
               ))}
             </div>
           </div>

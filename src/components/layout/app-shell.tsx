@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { type Route } from "next";
 import { type ComponentType, type ReactNode } from "react";
-import { Briefcase, Building2, LayoutDashboard, ShieldAlert, ShieldCheck, Users, UserCog, FileStack } from "lucide-react";
+import { Briefcase, Building2, LayoutDashboard, ShieldAlert, ShieldCheck, Users, UserCog, FileStack, Sparkles } from "lucide-react";
 
 import { signOutAction } from "@/features/auth/actions";
 import { type AdminRole } from "@/lib/utils/constants";
@@ -22,7 +22,8 @@ const baseNavItems: Array<{ href: Route; label: string; icon: NavIcon }> = [
 
 const privilegedItems: Array<{ href: Route; label: string; icon: NavIcon }> = [
   { href: "/users", label: "User Management", icon: UserCog },
-  { href: "/security-events", label: "Security Events", icon: ShieldAlert }
+  { href: "/security-events", label: "Security Events", icon: ShieldAlert },
+  { href: "/ai-config", label: "AI Configuration", icon: Sparkles }
 ];
 
 export function AppShell({ children, role }: { children: ReactNode; role: AdminRole }) {
