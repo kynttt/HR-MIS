@@ -1,14 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { JobApplicantsSheet } from "./job-applicants-sheet";
 import type { JobOpeningListItem } from "@/features/jobs/service";
 import { mockRankedApplicants } from "@/features/jobs/mock-ranked-applicants";
 
+interface JobsPageContextType {
+  onViewApplicants: (job: JobOpeningListItem) => void;
+}
+
+const JobsPageContext = createContext<JobsPageContextType | null>(null);
+
+export function useJobsPage() {
+  const context = useContext(JobsPageContext);
+  if (!context) {
+    throw new Error("useJobsPage must be used within JobsPageClient");
+  }
+  return context;
+}
+
 interface JobsPageClientProps {
   jobs: JobOpeningListItem[];
-  children: (props: { onViewApplicants: (job: JobOpeningListItem) => void }) => React.ReactNode;
+  children: ReactNode;
 }
 
 export function JobsPageClient({ jobs, children }: JobsPageClientProps) {
@@ -21,8 +35,8 @@ export function JobsPageClient({ jobs, children }: JobsPageClientProps) {
   };
 
   return (
-    <>
-      {children({ onViewApplicants: handleViewApplicants })}
+    <JobsPageContext.Provider value={{ onViewApplicants: handleViewApplicants }}>
+      {children}
       {selectedJob && (
         <JobApplicantsSheet
           isOpen={isSheetOpen}
@@ -33,6 +47,6 @@ export function JobsPageClient({ jobs, children }: JobsPageClientProps) {
           applicants={mockRankedApplicants}
         />
       )}
-    </>
+    </JobsPageContext.Provider>
   );
 }
