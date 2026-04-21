@@ -1,71 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAIConfiguration } from "@/features/ai/service";
 
-/**
- * Creates a TransformStream that reads NDJSON and converts each chunk to SSE.
- */
-function createTextExtractorTransform(
-  extractText: (parsed: unknown) => string | null
-): TransformStream<Uint8Array, Uint8Array> {
-  let buffer = "";
-  let totalChunks = 0;
-
-  return new TransformStream({
-    transform(chunk, controller) {
-      const decoded = new TextDecoder().decode(chunk, { stream: true });
-      buffer += decoded;
-      console.log("[Chat API Transform] Raw chunk:", decoded.substring(0, 200).replace(/\n/g, "\\n"));
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        console.log("[Chat API Transform] Processing line:", trimmed.substring(0, 200));
-
-        try {
-          const parsed = JSON.parse(trimmed);
-          console.log("[Chat API Transform] Parsed keys:", Object.keys(parsed).join(", "));
-          const text = extractText(parsed);
-          console.log("[Chat API Transform] Extracted text:", text?.substring(0, 50) ?? "(null)");
-
-          if (text) {
-            totalChunks++;
-            const sse = `data: ${JSON.stringify({ delta: text })}\n\n`;
-            console.log("[Chat API Transform] Emitting SSE:", sse.substring(0, 100));
-            controller.enqueue(new TextEncoder().encode(sse));
-          }
-        } catch (e) {
-          console.warn("[Chat API Transform] Failed to parse line:", trimmed.substring(0, 100), e);
-        }
-      }
-    },
-    flush(controller) {
-      console.log("[Chat API Transform] Flush called. Buffer:", buffer.substring(0, 200));
-      if (buffer.trim()) {
-        try {
-          const parsed = JSON.parse(buffer.trim());
-          console.log("[Chat API Transform] Flush parsed keys:", Object.keys(parsed).join(", "));
-          const text = extractText(parsed);
-          console.log("[Chat API Transform] Flush extracted:", text?.substring(0, 50) ?? "(null)");
-
-          if (text) {
-            totalChunks++;
-            const sse = `data: ${JSON.stringify({ delta: text })}\n\n`;
-            controller.enqueue(new TextEncoder().encode(sse));
-          }
-        } catch (e) {
-          console.warn("[Chat API Transform] Failed to flush buffer:", buffer.substring(0, 100), e);
-        }
-      }
-      console.log("[Chat API Transform] Total chunks emitted:", totalChunks);
-      controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
-    },
-  });
-}
-
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const { messages } = body;
@@ -172,23 +107,48 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        if (!response.body) {
+        const rawText = await response.text();
+        console.log("[Chat API] Gemini raw response length:", rawText.length);
+        console.log("[Chat API] Gemini raw response preview:", rawText.substring(0, 500));
+
+        // Gemini returns a JSON array: [{...}, {...}]
+        // Parse it and stream the text chunks
+        let items: unknown[] = [];
+        try {
+          const parsed = JSON.parse(rawText);
+          if (Array.isArray(parsed)) {
+            items = parsed;
+          } else {
+            items = [parsed];
+          }
+        } catch (e) {
+          console.error("[Chat API] Failed to parse Gemini response as JSON:", e);
           return NextResponse.json(
-            { error: "No response body" },
+            { error: "Invalid response from Gemini" },
             { status: 500 }
           );
         }
 
-        const transform = createTextExtractorTransform((parsed) => {
-          const obj = parsed as {
-            candidates?: Array<{
-              content?: { parts?: Array<{ text?: string }> };
-            }>;
-          };
-          return obj.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+        console.log("[Chat API] Gemini items count:", items.length);
+
+        const stream = new ReadableStream({
+          start(controller) {
+            let totalChunks = 0;
+            for (const item of items) {
+              const text = extractGeminiText(item);
+              if (text) {
+                totalChunks++;
+                const sse = `data: ${JSON.stringify({ delta: text })}\n\n`;
+                controller.enqueue(new TextEncoder().encode(sse));
+              }
+            }
+            console.log("[Chat API] Gemini total chunks emitted:", totalChunks);
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+            controller.close();
+          },
         });
 
-        return new Response(response.body.pipeThrough(transform), {
+        return new Response(stream, {
           headers: {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
@@ -229,9 +189,27 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const transform = createTextExtractorTransform((parsed) => {
-          const obj = parsed as { response?: string };
-          return obj.response ?? null;
+        // Ollama returns NDJSON — transform to SSE
+        const transform = new TransformStream<Uint8Array, Uint8Array>({
+          start() {},
+          transform(chunk, controller) {
+            const text = new TextDecoder().decode(chunk);
+            const lines = text.split("\n").filter((l) => l.trim());
+            for (const line of lines) {
+              try {
+                const parsed = JSON.parse(line);
+                if (typeof parsed.response === "string") {
+                  const sse = `data: ${JSON.stringify({ delta: parsed.response })}\n\n`;
+                  controller.enqueue(new TextEncoder().encode(sse));
+                }
+              } catch {
+                // Skip invalid lines
+              }
+            }
+          },
+          flush(controller) {
+            controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          },
         });
 
         return new Response(response.body.pipeThrough(transform), {
@@ -259,4 +237,17 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function extractGeminiText(item: unknown): string | null {
+  const obj = item as {
+    candidates?: Array<{
+      content?: { parts?: Array<{ text?: string }> };
+    }>;
+  };
+  const text = obj.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+  if (text) {
+    console.log("[Chat API] Gemini extracted text:", text.substring(0, 50));
+  }
+  return text;
 }
