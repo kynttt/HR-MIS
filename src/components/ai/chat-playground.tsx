@@ -221,13 +221,21 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
             </p>
             <div className="flex max-w-md flex-wrap justify-center gap-2">
               {SUGGESTED_PROMPTS.map((prompt) => (
-                <button
+                <div
                   key={prompt}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setInput(prompt)}
-                  className="rounded-full border border-[#e5edf5] bg-[#f6f9fc] px-3 py-1.5 text-xs text-[#64748d] transition-colors hover:border-[#533afd] hover:text-[#533afd]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setInput(prompt);
+                    }
+                  }}
+                  className="cursor-pointer rounded-full border border-[#e5edf5] bg-[#f6f9fc] px-3 py-1.5 text-xs text-[#64748d] transition-colors hover:border-[#533afd] hover:text-[#533afd]"
                 >
                   {prompt}
-                </button>
+                </div>
               ))}
             </div>
           </div>
