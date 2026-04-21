@@ -1,8 +1,5 @@
 import mammoth from "mammoth";
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const pdfParse = require("pdf-parse") as (buffer: Buffer) => Promise<{ text: string }>;
-
 function getFileType(contentType: string | null, url: string): "pdf" | "docx" | "unknown" {
   if (contentType) {
     if (contentType.includes("pdf")) return "pdf";
@@ -28,6 +25,9 @@ export async function extractResumeText(fileUrl: string): Promise<string | null>
     const buffer = Buffer.from(arrayBuffer);
 
     if (type === "pdf") {
+      // Lazy-load pdf-parse inside the function to avoid DOMMatrix crash at module init
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pdfParse = require("pdf-parse") as (buffer: Buffer) => Promise<{ text: string }>;
       const parsed = await pdfParse(buffer);
       return parsed.text?.trim() || null;
     }
