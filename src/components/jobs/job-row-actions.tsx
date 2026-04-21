@@ -1,6 +1,6 @@
 "use client";
 
-import { MoreHorizontal, Pencil, Users, Power } from "lucide-react";
+import { MoreHorizontal, Pencil, Users, Power, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { setJobOpeningStatusAction } from "@/features/jobs/actions";
+import { rankAllApplicationsForJobAction } from "@/features/applications/actions";
 import type { JobOpeningListItem } from "@/features/jobs/service";
 import { useJobsPage } from "./jobs-page-client";
 
@@ -64,6 +65,23 @@ export function JobRowActions({ job }: JobRowActionsProps) {
         <DropdownMenuItem onClick={() => onViewApplicants(job)} className="flex cursor-pointer items-center gap-2">
           <Users className="h-4 w-4 text-[#533afd]" />
           <span>View Applicants</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem asChild>
+          <form
+            action={async () => {
+              await rankAllApplicationsForJobAction(job.id);
+            }}
+            className="w-full"
+          >
+            <button
+              type="submit"
+              className="flex w-full cursor-pointer items-center gap-2"
+            >
+              <Sparkles className="h-4 w-4 text-[#533afd]" />
+              <span>Rank Applicants</span>
+            </button>
+          </form>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
