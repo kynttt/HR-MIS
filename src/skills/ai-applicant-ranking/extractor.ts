@@ -1,5 +1,7 @@
-import pdf from "pdf-parse";
 import mammoth from "mammoth";
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse = require("pdf-parse") as (buffer: Buffer) => Promise<{ text: string }>;
 
 function getFileType(contentType: string | null, url: string): "pdf" | "docx" | "unknown" {
   if (contentType) {
@@ -26,7 +28,7 @@ export async function extractResumeText(fileUrl: string): Promise<string | null>
     const buffer = Buffer.from(arrayBuffer);
 
     if (type === "pdf") {
-      const parsed = await pdf(buffer);
+      const parsed = await pdfParse(buffer);
       return parsed.text?.trim() || null;
     }
 
