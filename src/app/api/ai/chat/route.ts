@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAIConfiguration } from "@/features/ai/service";
 
 /**
- * Creates a TransformStream that reads NDJSON from Gemini/Ollama
- * and converts each chunk to SSE format with extracted text.
+ * Creates a TransformStream that reads NDJSON and converts each chunk to SSE.
  */
 function createTextExtractorTransform(
   extractText: (parsed: unknown) => string | null
@@ -45,7 +44,6 @@ function createTextExtractorTransform(
           // Skip malformed final buffer
         }
       }
-      // End SSE stream
       controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
     },
   });
@@ -54,6 +52,8 @@ function createTextExtractorTransform(
 export async function POST(request: NextRequest) {
   const body = await request.json();
   const { messages } = body;
+
+  console.log("[Chat API] Received request with messages:", messages.length);
 
   try {
     const config = await getAIConfiguration();
@@ -72,6 +72,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Filter out empty assistant messages before sending to provider
+    const cleanMessages = messages.filter(
+      (m: { role: string; content: string }) =>
+        m.role !== "assistant" || m.content.trim().length > 0
+    );
+
+    console.log("[Chat API] Provider:", config.provider, "Model:", config.model);
+    console.log("[Chat API] Clean messages count:", cleanMessages.length);
+
     switch (config.provider) {
       case "openai": {
         const response = await fetch(
@@ -84,7 +93,7 @@ export async function POST(request: NextRequest) {
             },
             body: JSON.stringify({
               model: config.model,
-              messages,
+              messages: cleanMessages,
               stream: true,
             }),
           }
@@ -102,7 +111,6 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // OpenAI already returns SSE — forward directly
         return new Response(response.body, {
           headers: {
             "Content-Type": "text/event-stream",
@@ -113,12 +121,14 @@ export async function POST(request: NextRequest) {
       }
 
       case "gemini": {
-        const geminiMessages = messages.map(
+        const geminiMessages = cleanMessages.map(
           (m: { role: string; content: string }) => ({
             role: m.role === "user" ? "user" : "model",
             parts: [{ text: m.content }],
           })
         );
+
+        console.log("[Chat API] Calling Gemini streamGenerateContent...");
 
         const response = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:streamGenerateContent?key=${config.apiKey}`,
@@ -131,6 +141,7 @@ export async function POST(request: NextRequest) {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          console.error("[Chat API] Gemini error:", errorData);
           return NextResponse.json(
             {
               error:
@@ -155,7 +166,11 @@ export async function POST(request: NextRequest) {
               content?: { parts?: Array<{ text?: string }> };
             }>;
           };
-          return obj.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+          const text = obj.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
+          if (text) {
+            console.log("[Chat API] Gemini extracted text:", text.substring(0, 50));
+          }
+          return text;
         });
 
         return new Response(response.body.pipeThrough(transform), {
@@ -168,7 +183,7 @@ export async function POST(request: NextRequest) {
       }
 
       case "ollama": {
-        const prompt = messages
+        const prompt = cleanMessages
           .map((m: { role: string; content: string }) => `${m.role}: ${m.content}`)
           .join("\n");
 
@@ -199,7 +214,6 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Transform Ollama NDJSON into SSE
         const transform = createTextExtractorTransform((parsed) => {
           const obj = parsed as { response?: string };
           return obj.response ?? null;
@@ -221,7 +235,7 @@ export async function POST(request: NextRequest) {
         );
     }
   } catch (error) {
-    console.error("Chat API error:", error);
+    console.error("[Chat API] Error:", error);
     return NextResponse.json(
       {
         error: "Failed to process chat request",

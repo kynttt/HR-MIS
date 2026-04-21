@@ -30,7 +30,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const [debug, setDebug] = useState(false);
-  const [rawChunks, setRawChunks] = useState<string[]>([]);
+  const [rawLines, setRawLines] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const assistantContentRef = useRef("");
@@ -48,15 +48,20 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
+    // Clean messages: remove any empty assistant messages
+    const cleanMessages = messages.filter(
+      (m) => m.role !== "assistant" || m.content.trim().length > 0
+    );
+
     const trimmedInput = input.trim();
     const userMessage: Message = { role: "user", content: trimmedInput };
-    const newMessages = [...messages, userMessage];
+    const newMessages = [...cleanMessages, userMessage];
 
     setMessages(newMessages);
     setInput("");
     setIsLoading(true);
     setError(null);
-    setRawChunks([]);
+    setRawLines([]);
     assistantContentRef.current = "";
 
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
@@ -65,7 +70,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
     abortRef.current = new AbortController();
 
     try {
-      console.log("[Chat] Sending request...");
+      console.log("[Chat] Sending request with", newMessages.length, "messages");
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,7 +79,6 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
       });
 
       console.log("[Chat] Response status:", response.status);
-      console.log("[Chat] Content-Type:", response.headers.get("content-type"));
 
       if (!response.ok) {
         const text = await response.text();
@@ -93,44 +97,57 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
         throw new Error("No response body received from server");
       }
 
-      // Stream the response
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let chunkCount = 0;
 
       while (true) {
         const { done, value } = await reader.read();
 
         if (done) {
-          // Flush remaining buffer
-          if (buffer.trim()) {
-            const content = parseStreamChunk(buffer);
-            if (content) {
-              appendAssistantContent(content);
-            }
-          }
-          console.log("[Chat] Stream done. Final content:", assistantContentRef.current);
+          console.log("[Chat] Stream done. Total chunks:", chunkCount);
+          console.log("[Chat] Final content:", assistantContentRef.current.substring(0, 100));
           break;
         }
 
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
 
-        if (debug) {
-          setRawChunks((prev) => [...prev.slice(-20), chunk.replace(/\n/g, "\\n").substring(0, 200)]);
-        }
+        // SSE events are separated by double newlines
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || ""; // Keep incomplete event in buffer
 
-        // Try to extract complete SSE lines
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+        for (const event of events) {
+          const lines = event.split("\n").filter((l) => l.trim());
+          for (const line of lines) {
+            if (debug) {
+              setRawLines((prev) => [...prev.slice(-30), line.substring(0, 200)]);
+            }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
+            if (!line.startsWith("data: ")) continue;
 
-          const content = parseStreamChunk(trimmed);
-          if (content) {
-            appendAssistantContent(content);
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") {
+              console.log("[Chat] Received [DONE]");
+              continue;
+            }
+
+            try {
+              const parsed = JSON.parse(data);
+              if (typeof parsed.delta === "string") {
+                chunkCount++;
+                assistantContentRef.current += parsed.delta;
+                const content = assistantContentRef.current;
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content };
+                  return updated;
+                });
+              }
+            } catch (e) {
+              console.warn("[Chat] Failed to parse SSE data:", data.substring(0, 100));
+            }
           }
         }
       }
@@ -156,40 +173,6 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
     }
   };
 
-  /**
-   * Parse a unified SSE line from the API.
-   * Format: data: {"delta": "text content"}
-   * All providers (OpenAI, Gemini, Ollama) are normalized to this format.
-   */
-  function parseStreamChunk(line: string): string | null {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("data: ")) return null;
-
-    const data = trimmed.slice(6).trim();
-    if (data === "[DONE]") return null;
-
-    try {
-      const parsed = JSON.parse(data);
-      if (typeof parsed.delta === "string") {
-        return parsed.delta;
-      }
-    } catch {
-      // Not valid JSON — might be a plain text SSE line
-      console.warn("[Chat] Failed to parse SSE data:", data.substring(0, 100));
-    }
-    return null;
-  }
-
-  function appendAssistantContent(delta: string) {
-    assistantContentRef.current += delta;
-    const content = assistantContentRef.current;
-    setMessages((prev) => {
-      const updated = [...prev];
-      updated[updated.length - 1] = { role: "assistant", content };
-      return updated;
-    });
-  }
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -200,7 +183,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   const clearChat = () => {
     setMessages([]);
     setError(null);
-    setRawChunks([]);
+    setRawLines([]);
     assistantContentRef.current = "";
     if (abortRef.current) {
       abortRef.current.abort();
@@ -343,14 +326,14 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
       </div>
 
       {/* Debug Panel */}
-      {debug && rawChunks.length > 0 && (
-        <div className="mx-5 mb-3 max-h-32 overflow-auto rounded border border-amber-200 bg-amber-50 p-2">
+      {debug && rawLines.length > 0 && (
+        <div className="mx-5 mb-3 max-h-40 overflow-auto rounded border border-amber-200 bg-amber-50 p-2">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
-            Debug — Raw Chunks
+            Debug — Raw SSE Lines
           </p>
-          {rawChunks.map((chunk, i) => (
-            <pre key={i} className="mb-1 text-[10px] text-amber-800 break-all">
-              {chunk}
+          {rawLines.map((line, i) => (
+            <pre key={i} className="mb-0.5 text-[10px] text-amber-800 break-all">
+              {line}
             </pre>
           ))}
         </div>
