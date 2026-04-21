@@ -8,10 +8,14 @@ function createTextExtractorTransform(
   extractText: (parsed: unknown) => string | null
 ): TransformStream<Uint8Array, Uint8Array> {
   let buffer = "";
+  let totalChunks = 0;
 
   return new TransformStream({
     transform(chunk, controller) {
-      buffer += new TextDecoder().decode(chunk, { stream: true });
+      const decoded = new TextDecoder().decode(chunk, { stream: true });
+      buffer += decoded;
+      console.log("[Chat API Transform] Raw chunk:", decoded.substring(0, 200).replace(/\n/g, "\\n"));
+
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
 
@@ -19,31 +23,44 @@ function createTextExtractorTransform(
         const trimmed = line.trim();
         if (!trimmed) continue;
 
+        console.log("[Chat API Transform] Processing line:", trimmed.substring(0, 200));
+
         try {
           const parsed = JSON.parse(trimmed);
+          console.log("[Chat API Transform] Parsed keys:", Object.keys(parsed).join(", "));
           const text = extractText(parsed);
+          console.log("[Chat API Transform] Extracted text:", text?.substring(0, 50) ?? "(null)");
+
           if (text) {
+            totalChunks++;
             const sse = `data: ${JSON.stringify({ delta: text })}\n\n`;
+            console.log("[Chat API Transform] Emitting SSE:", sse.substring(0, 100));
             controller.enqueue(new TextEncoder().encode(sse));
           }
-        } catch {
-          // Skip malformed lines
+        } catch (e) {
+          console.warn("[Chat API Transform] Failed to parse line:", trimmed.substring(0, 100), e);
         }
       }
     },
     flush(controller) {
+      console.log("[Chat API Transform] Flush called. Buffer:", buffer.substring(0, 200));
       if (buffer.trim()) {
         try {
           const parsed = JSON.parse(buffer.trim());
+          console.log("[Chat API Transform] Flush parsed keys:", Object.keys(parsed).join(", "));
           const text = extractText(parsed);
+          console.log("[Chat API Transform] Flush extracted:", text?.substring(0, 50) ?? "(null)");
+
           if (text) {
+            totalChunks++;
             const sse = `data: ${JSON.stringify({ delta: text })}\n\n`;
             controller.enqueue(new TextEncoder().encode(sse));
           }
-        } catch {
-          // Skip malformed final buffer
+        } catch (e) {
+          console.warn("[Chat API Transform] Failed to flush buffer:", buffer.substring(0, 100), e);
         }
       }
+      console.log("[Chat API Transform] Total chunks emitted:", totalChunks);
       controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
     },
   });
@@ -139,6 +156,9 @@ export async function POST(request: NextRequest) {
           }
         );
 
+        console.log("[Chat API] Gemini response status:", response.status);
+        console.log("[Chat API] Gemini content-type:", response.headers.get("content-type"));
+
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           console.error("[Chat API] Gemini error:", errorData);
@@ -159,18 +179,13 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Transform Gemini NDJSON into SSE
         const transform = createTextExtractorTransform((parsed) => {
           const obj = parsed as {
             candidates?: Array<{
               content?: { parts?: Array<{ text?: string }> };
             }>;
           };
-          const text = obj.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
-          if (text) {
-            console.log("[Chat API] Gemini extracted text:", text.substring(0, 50));
-          }
-          return text;
+          return obj.candidates?.[0]?.content?.parts?.[0]?.text ?? null;
         });
 
         return new Response(response.body.pipeThrough(transform), {
