@@ -26,7 +26,7 @@ interface JobsPageClientProps {
   children: ReactNode;
 }
 
-export function JobsPageClient({ jobs, children }: JobsPageClientProps) {
+export function JobsPageClient({ children }: JobsPageClientProps) {
   const [selectedJob, setSelectedJob] = useState<JobOpeningListItem | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [applicants, setApplicants] = useState<RankedApplicant[]>([]);

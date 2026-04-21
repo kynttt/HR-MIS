@@ -1,6 +1,6 @@
 import mammoth from "mammoth";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const pdfParse = require("pdf-parse") as (buffer: Buffer) => Promise<{ text: string }>;
 
 function getFileType(contentType: string | null, url: string): "pdf" | "docx" | "unknown" {
