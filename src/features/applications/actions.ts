@@ -14,6 +14,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/utils/audit";
 import type { ApplicationDetails } from "./service";
 
+import { rankAllApplicationsForJob, rankSingleApplication } from "@/skills/ai-applicant-ranking/orchestrator";
 import { applicationNoteSchema, applicationStatusSchema, convertApplicationSchema, publicApplicationSchema } from "./schema";
 
 const APPLICATION_MANAGEMENT_ROLES = ["super_admin", "hr_admin", "department_admin"] as const;
@@ -403,6 +404,11 @@ export async function submitApplicationAction(formData: FormData) {
       console.error("Audit log failed for submit_application", error);
     });
 
+    // Fire-and-forget AI ranking
+    rankSingleApplication(applicationId).catch((err) => {
+      console.error("[Auto-Rank] Background ranking failed for application:", applicationId, err);
+    });
+
     redirect(withQuery(returnPath, "success", "1"));
   } catch (error) {
     const isRedirectControlFlow =
@@ -484,6 +490,20 @@ export async function updateApplicationStatusAction(input: unknown) {
   revalidatePath("/applications");
   revalidatePath(`/applications/${parsed.application_id}`);
   return { ok: true as const };
+}
+
+export async function rankAllApplicationsForJobAction(jobOpeningId: string) {
+  await requireAdminRole(APPLICATION_MANAGEMENT_ROLES);
+
+  try {
+    const results = await rankAllApplicationsForJob(jobOpeningId);
+    revalidatePath("/jobs");
+    revalidatePath("/applications");
+    return { ok: true as const, count: results.length };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Ranking failed";
+    return { ok: false as const, error: message };
+  }
 }
 
 export async function addApplicationNoteAction(input: unknown) {
