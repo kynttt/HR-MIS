@@ -1,3 +1,5 @@
+"use server";
+
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUserOrganizationId } from "@/features/organizations/service";
 import type { RankedApplicant } from "@/features/jobs/types";
