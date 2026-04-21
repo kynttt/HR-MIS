@@ -1,5 +1,6 @@
 "use client";
 
+import { useTransition } from "react";
 import { MoreHorizontal, Pencil, Users, Power, Sparkles } from "lucide-react";
 import Link from "next/link";
 
@@ -21,6 +22,13 @@ interface JobRowActionsProps {
 
 export function JobRowActions({ job }: JobRowActionsProps) {
   const { onViewApplicants } = useJobsPage();
+  const [isRanking, startRanking] = useTransition();
+
+  const handleRank = () => {
+    startRanking(async () => {
+      await rankAllApplicationsForJobAction(job.id);
+    });
+  };
 
   return (
     <DropdownMenu>
@@ -67,21 +75,13 @@ export function JobRowActions({ job }: JobRowActionsProps) {
           <span>View Applicants</span>
         </DropdownMenuItem>
 
-        <DropdownMenuItem asChild>
-          <form
-            action={async () => {
-              await rankAllApplicationsForJobAction(job.id);
-            }}
-            className="w-full"
-          >
-            <button
-              type="submit"
-              className="flex w-full cursor-pointer items-center gap-2"
-            >
-              <Sparkles className="h-4 w-4 text-[#533afd]" />
-              <span>Rank Applicants</span>
-            </button>
-          </form>
+        <DropdownMenuItem
+          onClick={handleRank}
+          disabled={isRanking}
+          className="flex cursor-pointer items-center gap-2"
+        >
+          <Sparkles className="h-4 w-4 text-[#533afd]" />
+          <span>{isRanking ? "Ranking..." : "Rank Applicants"}</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
