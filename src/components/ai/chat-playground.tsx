@@ -145,7 +145,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
                   return updated;
                 });
               }
-            } catch (e) {
+            } catch {
               console.warn("[Chat] Failed to parse SSE data:", data.substring(0, 100));
             }
           }
