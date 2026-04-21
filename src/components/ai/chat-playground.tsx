@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Send, Trash2, Bot, User, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
+import { Send, Trash2, Bot, User, AlertCircle, Sparkles, RefreshCw, Bug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,9 +29,10 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [debug, setDebug] = useState(false);
+  const [rawChunks, setRawChunks] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Use a ref to track the latest assistant content for streaming updates
   const assistantContentRef = useRef("");
 
   useEffect(() => {
@@ -40,7 +41,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
   }, []);
 
@@ -55,15 +56,16 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
     setInput("");
     setIsLoading(true);
     setError(null);
+    setRawChunks([]);
     assistantContentRef.current = "";
 
-    // Add empty assistant message placeholder
     setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
     scrollToBottom();
 
     abortRef.current = new AbortController();
 
     try {
+      console.log("[Chat] Sending request...");
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -71,13 +73,18 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
         signal: abortRef.current.signal,
       });
 
+      console.log("[Chat] Response status:", response.status);
+      console.log("[Chat] Content-Type:", response.headers.get("content-type"));
+
       if (!response.ok) {
+        const text = await response.text();
+        console.error("[Chat] Error response:", text);
         let errorMessage = `Server error: ${response.status}`;
         try {
-          const data = await response.json();
+          const data = JSON.parse(text);
           errorMessage = data.error || data.details || errorMessage;
         } catch {
-          // Non-JSON error response
+          errorMessage = text || errorMessage;
         }
         throw new Error(errorMessage);
       }
@@ -86,24 +93,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
         throw new Error("No response body received from server");
       }
 
-      const contentType = response.headers.get("content-type") || "";
-      const isStreaming = contentType.includes("stream") || contentType.includes("ndjson");
-
-      if (!isStreaming) {
-        // Non-streaming fallback: read the full response as JSON
-        const data = await response.json();
-        const content = data.content || data.text || data.response || data.message || JSON.stringify(data);
-        assistantContentRef.current = content;
-        setMessages((prev) => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content };
-          return updated;
-        });
-        scrollToBottom();
-        return;
-      }
-
-      // Streaming mode
+      // Stream the response
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -112,24 +102,46 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
         const { done, value } = await reader.read();
 
         if (done) {
-          // Flush any remaining buffer
+          // Flush remaining buffer
           if (buffer.trim()) {
-            processBuffer(buffer, true);
+            const content = parseStreamChunk(buffer, config.provider);
+            if (content) {
+              appendAssistantContent(content);
+            }
           }
+          console.log("[Chat] Stream done. Final content:", assistantContentRef.current);
           break;
         }
 
-        buffer += decoder.decode(value, { stream: true });
-        buffer = processBuffer(buffer, false);
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+
+        if (debug) {
+          setRawChunks((prev) => [...prev.slice(-20), chunk.replace(/\n/g, "\\n").substring(0, 200)]);
+        }
+
+        // Try to extract complete SSE lines
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          const content = parseStreamChunk(trimmed, config.provider);
+          if (content) {
+            appendAssistantContent(content);
+          }
+        }
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
+        console.log("[Chat] Aborted by user");
         return;
       }
       console.error("[Chat] Error:", err);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
 
-      // Remove empty assistant message on error
       setMessages((prev) => {
         const last = prev[prev.length - 1];
         if (last?.role === "assistant" && last.content === "") {
@@ -144,87 +156,57 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
     }
   };
 
-  function processBuffer(buffer: string, isFinal: boolean): string {
-    if (config.provider === "openai") {
-      return processOpenAIBuffer(buffer, isFinal);
-    } else if (config.provider === "gemini") {
-      return processGeminiBuffer(buffer, isFinal);
-    } else if (config.provider === "ollama") {
-      return processOllamaBuffer(buffer, isFinal);
-    }
-    return buffer;
-  }
-
-  function processOpenAIBuffer(buffer: string, isFinal: boolean): string {
-    const lines = buffer.split("\n");
-    // Keep the last line if it's incomplete (no trailing newline)
-    const keep = isFinal ? "" : (lines.pop() || "");
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line || !line.startsWith("data: ")) continue;
-
+  function parseStreamChunk(line: string, provider: string): string | null {
+    if (provider === "openai") {
+      if (!line.startsWith("data: ")) return null;
       const data = line.slice(6).trim();
-      if (data === "[DONE]") continue;
-
+      if (data === "[DONE]") return null;
       try {
         const parsed = JSON.parse(data);
         const delta = parsed.choices?.[0]?.delta?.content;
         if (typeof delta === "string") {
-          appendAssistantContent(delta);
-        }
-      } catch (e) {
-        console.warn("[Chat] Failed to parse SSE chunk:", data.substring(0, 100), e);
-      }
-    }
-
-    return keep;
-  }
-
-  function processGeminiBuffer(buffer: string, isFinal: boolean): string {
-    const chunks = buffer.split("\n").filter((l) => l.trim());
-    const incomplete: string[] = [];
-
-    for (const chunk of chunks) {
-      try {
-        const parsed = JSON.parse(chunk);
-        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (typeof text === "string") {
-          appendAssistantContent(text);
+          return delta;
         }
       } catch {
-        incomplete.push(chunk);
+        // Invalid JSON chunk
       }
+      return null;
     }
 
-    return incomplete.join("\n");
-  }
+    if (provider === "gemini") {
+      try {
+        const parsed = JSON.parse(line);
+        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (typeof text === "string") {
+          return text;
+        }
+      } catch {
+        // Invalid JSON chunk
+      }
+      return null;
+    }
 
-  function processOllamaBuffer(buffer: string, isFinal: boolean): string {
-    const lines = buffer.split("\n");
-    const keep = isFinal ? "" : (lines.pop() || "");
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
+    if (provider === "ollama") {
       try {
         const parsed = JSON.parse(line);
         if (typeof parsed.response === "string") {
-          appendAssistantContent(parsed.response);
+          return parsed.response;
         }
-      } catch (e) {
-        console.warn("[Chat] Failed to parse Ollama chunk:", line.substring(0, 100), e);
+      } catch {
+        // Invalid JSON chunk
       }
+      return null;
     }
 
-    return keep;
+    return null;
   }
 
   function appendAssistantContent(delta: string) {
     assistantContentRef.current += delta;
-    const currentContent = assistantContentRef.current;
+    const content = assistantContentRef.current;
     setMessages((prev) => {
       const updated = [...prev];
-      updated[updated.length - 1] = { role: "assistant", content: currentContent };
+      updated[updated.length - 1] = { role: "assistant", content };
       return updated;
     });
   }
@@ -239,6 +221,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   const clearChat = () => {
     setMessages([]);
     setError(null);
+    setRawChunks([]);
     assistantContentRef.current = "";
     if (abortRef.current) {
       abortRef.current.abort();
@@ -247,17 +230,14 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   };
 
   const retryLastMessage = () => {
-    if (messages.length === 0) return;
-    // Remove the last assistant message if it's empty
     setMessages((prev) => {
       const last = prev[prev.length - 1];
-      if (last?.role === "assistant" && last.content === "") {
+      if (last?.role === "assistant") {
         return prev.slice(0, -1);
       }
       return prev;
     });
     setError(null);
-    // Put the last user message back in the input
     const lastUserMsg = messages.filter((m) => m.role === "user").pop();
     if (lastUserMsg) {
       setInput(lastUserMsg.content);
@@ -284,6 +264,15 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
           <Badge variant="muted" className="text-xs">
             {config.model}
           </Badge>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDebug((d) => !d)}
+            className="text-[#64748d] hover:text-[#061b31]"
+            title="Toggle debug"
+          >
+            <Bug className="h-4 w-4" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -373,6 +362,20 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
           </div>
         )}
       </div>
+
+      {/* Debug Panel */}
+      {debug && rawChunks.length > 0 && (
+        <div className="mx-5 mb-3 max-h-32 overflow-auto rounded border border-amber-200 bg-amber-50 p-2">
+          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+            Debug — Raw Chunks
+          </p>
+          {rawChunks.map((chunk, i) => (
+            <pre key={i} className="mb-1 text-[10px] text-amber-800 break-all">
+              {chunk}
+            </pre>
+          ))}
+        </div>
+      )}
 
       {/* Error */}
       {error && (
