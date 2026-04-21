@@ -36,7 +36,7 @@ export default async function AIConfigPage() {
       </section>
 
       {/* Configuration Form */}
-      <AIConfigForm initialConfig={savedConfig} onSave={saveAIConfigurationAction} />
+      <AIConfigForm initialConfig={savedConfig ?? undefined} onSave={saveAIConfigurationAction} />
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { getAIConfiguration } from "@/features/ai/service";
 export default async function AIPlaygroundPage() {
   const config = await getAIConfiguration();
 
-  if (!config.isEnabled) {
+  if (!config) {
     return (
       <div className="flex h-[calc(100vh-12rem)] flex-col items-center justify-center">
         <Bot className="mb-4 h-16 w-16 text-[#e5edf5]" />
@@ -15,8 +15,7 @@ export default async function AIPlaygroundPage() {
           AI Playground
         </h2>
         <p className="mb-6 max-w-md text-center text-sm text-[#64748d]">
-          The AI playground lets you test your configured AI provider. Enable AI
-          configuration first to get started.
+          No AI configuration found. Set up your AI provider first to start testing.
         </p>
         <a
           href="/ai-config"
@@ -45,10 +44,17 @@ export default async function AIPlaygroundPage() {
               Test your AI provider configuration with real prompts.
             </p>
           </div>
-          <Badge variant="warning" className="flex items-center gap-1">
-            <ShieldAlert className="h-3 w-3" />
-            Admin Only
-          </Badge>
+          <div className="flex items-center gap-2">
+            {!config.isEnabled && (
+              <Badge variant="warning" className="text-xs">
+                AI Ranking Disabled
+              </Badge>
+            )}
+            <Badge variant="warning" className="flex items-center gap-1">
+              <ShieldAlert className="h-3 w-3" />
+              Admin Only
+            </Badge>
+          </div>
         </div>
       </section>
 

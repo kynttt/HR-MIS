@@ -8,8 +8,8 @@ export async function POST(request: NextRequest) {
   try {
     const config = await getAIConfiguration();
 
-    if (!config.isEnabled) {
-      return NextResponse.json({ error: "AI is not enabled" }, { status: 400 });
+    if (!config) {
+      return NextResponse.json({ error: "AI configuration not found" }, { status: 400 });
     }
 
     if (!config.apiKey && config.provider !== "ollama") {

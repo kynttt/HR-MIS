@@ -37,10 +37,6 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
-    if (!config.isEnabled) {
-      setError("AI is not enabled. Please configure it first.");
-      return;
-    }
     if (!config.apiKey && config.provider !== "ollama") {
       setError("API key is required. Please configure it in AI Settings.");
       return;
