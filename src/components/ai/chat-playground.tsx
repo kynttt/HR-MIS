@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Send, Trash2, Bot, User, AlertCircle, Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,10 +28,15 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Use a ref to track the latest assistant content for streaming updates
   const assistantContentRef = useRef("");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -301,25 +306,27 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
             <p className="mb-6 text-xs text-[#64748d]">
               Send a message to test your AI configuration
             </p>
-            <div className="flex max-w-md flex-wrap justify-center gap-2">
-              {SUGGESTED_PROMPTS.map((prompt) => (
-                <div
-                  key={prompt}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setInput(prompt)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setInput(prompt);
-                    }
-                  }}
-                  className="cursor-pointer rounded-full border border-[#e5edf5] bg-[#f6f9fc] px-3 py-1.5 text-xs text-[#64748d] transition-colors hover:border-[#533afd] hover:text-[#533afd]"
-                >
-                  {prompt}
-                </div>
-              ))}
-            </div>
+            {mounted && (
+              <div className="flex max-w-md flex-wrap justify-center gap-2">
+                {SUGGESTED_PROMPTS.map((prompt) => (
+                  <div
+                    key={prompt}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setInput(prompt)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setInput(prompt);
+                      }
+                    }}
+                    className="cursor-pointer rounded-full border border-[#e5edf5] bg-[#f6f9fc] px-3 py-1.5 text-xs text-[#64748d] transition-colors hover:border-[#533afd] hover:text-[#533afd]"
+                  >
+                    {prompt}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">
