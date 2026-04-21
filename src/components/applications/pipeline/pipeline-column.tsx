@@ -30,6 +30,7 @@ interface PipelineColumnProps {
     departmentName: string | null
     status: string
     submittedAt: string
+    aiScore?: number
   }[]
   onQuickView: (id: string) => void
 }

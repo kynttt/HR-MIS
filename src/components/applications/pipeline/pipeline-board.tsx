@@ -23,6 +23,7 @@ interface PipelineBoardProps {
     departmentName: string | null
     status: string
     submittedAt: string
+    aiScore?: number
   }[]
   onQuickView: (id: string) => void
   onStatusChange: (id: string, newStatus: string) => void
@@ -91,6 +92,7 @@ function PipelineBoard({ initialApplications, onQuickView, onStatusChange }: Pip
             departmentName={activeCard.departmentName}
             status={activeCard.status}
             submittedAt={activeCard.submittedAt}
+            aiScore={activeCard.aiScore}
             onQuickView={onQuickView}
           />
         )}

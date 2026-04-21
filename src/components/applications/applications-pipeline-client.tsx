@@ -39,7 +39,8 @@ function ApplicationsPipelineClient({ applications, activeRoleOpenings, selected
         jobTitle: app.job?.job_title ?? "Unknown",
         departmentName: app.job?.department_name ?? null,
         status: app.status,
-        submittedAt: app.submitted_at
+        submittedAt: app.submitted_at,
+        aiScore: app.aiScore
       })),
     [applications]
   )
