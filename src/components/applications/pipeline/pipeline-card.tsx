@@ -5,6 +5,7 @@ import { useSortable } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
+import { AIScoreBadge } from "@/components/applicants/ai-score-badge"
 import { cn } from "@/lib/utils/cn"
 
 interface PipelineCardProps {
@@ -14,6 +15,7 @@ interface PipelineCardProps {
   departmentName: string | null
   status: string
   submittedAt: string
+  aiScore?: number
   onQuickView: (id: string) => void
 }
 
@@ -33,7 +35,7 @@ function getInitials(name: string) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
 }
 
-function PipelineCard({ id, applicantName, jobTitle, departmentName, status, submittedAt, onQuickView }: PipelineCardProps) {
+function PipelineCard({ id, applicantName, jobTitle, departmentName, status, submittedAt, aiScore, onQuickView }: PipelineCardProps) {
   const {
     attributes,
     listeners,
@@ -73,9 +75,14 @@ function PipelineCard({ id, applicantName, jobTitle, departmentName, status, sub
       </div>
 
       <div className="mt-3 flex items-center justify-between gap-2">
-        <Badge variant={STATUS_BADGE[status] ?? "muted"} className="text-xs px-1.5 py-0.5">
-          {status.replaceAll("_", " ")}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={STATUS_BADGE[status] ?? "muted"} className="text-xs px-1.5 py-0.5">
+            {status.replaceAll("_", " ")}
+          </Badge>
+          {typeof aiScore === "number" && aiScore > 0 && (
+            <AIScoreBadge score={aiScore} className="text-[10px] px-1.5 py-0.5" />
+          )}
+        </div>
         <span className="text-xs text-[#64748d]">
           {formatDistanceToNow(new Date(submittedAt), { addSuffix: false })}
         </span>
