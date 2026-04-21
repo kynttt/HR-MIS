@@ -9,7 +9,9 @@ import { ApplicationStatusForm } from "@/features/applications/application-statu
 import { ConvertToEmployeeForm } from "@/features/applications/convert-to-employee-form";
 import { ApplicationDocumentRemoveButton } from "@/features/applications/application-document-remove-button";
 import { getApplicationDetails } from "@/features/applications/service";
+import { getApplicationAIResult } from "@/features/applications/ai-ranking-service";
 import { listDepartments } from "@/features/departments/service";
+import { AIScoreBadge } from "@/components/applicants/ai-score-badge";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -20,6 +22,7 @@ export default async function ApplicationDetailsPage({ params }: Props) {
 
   try {
     const [application, departments] = await Promise.all([getApplicationDetails(id), listDepartments()]);
+    const aiResult = await getApplicationAIResult(id).catch(() => null);
 
     return (
       <div className="space-y-6">
@@ -45,6 +48,31 @@ export default async function ApplicationDetailsPage({ params }: Props) {
                 <span className="font-medium">Current Status:</span> {application.status}
               </p>
             </div>
+            {aiResult && (
+              <div className="mt-4 rounded-lg border border-[#e5edf5] bg-[#f6f9fc] p-4">
+                <div className="flex items-center gap-3">
+                  <h4 className="font-semibold">AI Evaluation</h4>
+                  <AIScoreBadge score={Math.round(Number(aiResult.score))} />
+                </div>
+                <p className="mt-2 text-sm text-[#273951]">{aiResult.rationale}</p>
+                {aiResult.highlights && aiResult.highlights.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {aiResult.highlights.map((highlight: string, i: number) => (
+                      <span
+                        key={i}
+                        className="inline-flex rounded-md border border-[#d6d9fc] bg-white px-2 py-0.5 text-xs text-[#4434d4]"
+                      >
+                        {highlight}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-[#64748d]">
+                  Evaluated with {aiResult.provider} / {aiResult.model} on{" "}
+                  {new Date(aiResult.created_at).toLocaleDateString()}
+                </p>
+              </div>
+            )}
             <div className="mt-4">
               <h4 className="font-semibold">Application Notes</h4>
               <ul className="mt-2 space-y-2 text-sm text-[#273951]">
