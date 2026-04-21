@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { useCallback, useContext, createContext, useState, type ReactNode } from "react";
 
 import { JobApplicantsSheet } from "./job-applicants-sheet";
 import type { JobOpeningListItem } from "@/features/jobs/service";
-import { mockRankedApplicants } from "@/features/jobs/mock-ranked-applicants";
+import { getRankedApplicantsForJob } from "@/features/applications/ai-ranking-service";
+import type { RankedApplicant } from "@/features/jobs/types";
 
 interface JobsPageContextType {
   onViewApplicants: (job: JobOpeningListItem) => void;
@@ -28,11 +29,23 @@ interface JobsPageClientProps {
 export function JobsPageClient({ jobs, children }: JobsPageClientProps) {
   const [selectedJob, setSelectedJob] = useState<JobOpeningListItem | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [applicants, setApplicants] = useState<RankedApplicant[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleViewApplicants = (job: JobOpeningListItem) => {
+  const handleViewApplicants = useCallback(async (job: JobOpeningListItem) => {
     setSelectedJob(job);
     setIsSheetOpen(true);
-  };
+    setIsLoading(true);
+    try {
+      const data = await getRankedApplicantsForJob(job.id);
+      setApplicants(data);
+    } catch (error) {
+      console.error("Failed to load applicants:", error);
+      setApplicants([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   return (
     <JobsPageContext.Provider value={{ onViewApplicants: handleViewApplicants }}>
@@ -44,7 +57,8 @@ export function JobsPageClient({ jobs, children }: JobsPageClientProps) {
           jobId={selectedJob.id}
           jobTitle={selectedJob.job_title}
           orgName="University"
-          applicants={mockRankedApplicants}
+          applicants={applicants}
+          isLoading={isLoading}
         />
       )}
     </JobsPageContext.Provider>
