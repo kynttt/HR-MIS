@@ -2,17 +2,11 @@ import { Sparkles, ShieldAlert } from "lucide-react";
 
 import { AIConfigForm } from "@/components/ai/ai-config-form";
 import { Badge } from "@/components/ui/badge";
-import type { AIConfiguration } from "@/features/jobs/types";
+import { getAIConfiguration } from "@/features/ai/service";
+import { saveAIConfigurationAction } from "@/features/ai/actions";
 
-export default function AIConfigPage() {
-  // TODO: Load from database/storage
-  const savedConfig: AIConfiguration | undefined = undefined;
-
-  const handleSave = async (config: AIConfiguration) => {
-    "use server";
-    // TODO: Save to database
-    console.log("AI Configuration saved:", config);
-  };
+export default async function AIConfigPage() {
+  const savedConfig = await getAIConfiguration();
 
   return (
     <div className="space-y-6">
@@ -42,7 +36,7 @@ export default function AIConfigPage() {
       </section>
 
       {/* Configuration Form */}
-      <AIConfigForm initialConfig={savedConfig} onSave={handleSave} />
+      <AIConfigForm initialConfig={savedConfig} onSave={saveAIConfigurationAction} />
     </div>
   );
 }

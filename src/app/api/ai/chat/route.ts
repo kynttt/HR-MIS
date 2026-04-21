@@ -1,20 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAIConfiguration } from "@/features/ai/service";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { messages, provider, apiKey, model, ollamaBaseUrl } = body;
+  const { messages } = body;
 
   try {
-    switch (provider) {
+    const config = await getAIConfiguration();
+
+    if (!config.isEnabled) {
+      return NextResponse.json({ error: "AI is not enabled" }, { status: 400 });
+    }
+
+    if (!config.apiKey && config.provider !== "ollama") {
+      return NextResponse.json({ error: "API key not configured" }, { status: 400 });
+    }
+
+    switch (config.provider) {
       case "openai": {
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${apiKey}`,
+            Authorization: `Bearer ${config.apiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model,
+            model: config.model,
             messages,
             stream: true,
           }),
@@ -46,7 +57,7 @@ export async function POST(request: NextRequest) {
         );
 
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:streamGenerateContent?key=${config.apiKey}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -72,16 +83,15 @@ export async function POST(request: NextRequest) {
       }
 
       case "ollama": {
-        // Ollama expects a single prompt, so we concatenate messages
         const prompt = messages
           .map((m: { role: string; content: string }) => `${m.role}: ${m.content}`)
           .join("\n");
 
-        const response = await fetch(`${ollamaBaseUrl || "http://localhost:11434"}/api/generate`, {
+        const response = await fetch(`${config.ollamaBaseUrl || "http://localhost:11434"}/api/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model,
+            model: config.model,
             prompt,
             stream: true,
           }),

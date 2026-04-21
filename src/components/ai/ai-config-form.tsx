@@ -17,7 +17,7 @@ import type {
 
 interface AIConfigFormProps {
   initialConfig?: AIConfiguration;
-  onSave?: (config: AIConfiguration) => void;
+  onSave?: (config: AIConfiguration) => Promise<{ ok: boolean; error?: string }> | void;
 }
 
 const PROVIDER_INFO: Record<
@@ -147,8 +147,15 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
     setFetchError(null);
   };
 
-  const handleSave = () => {
-    onSave?.(config);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setSaveError(null);
+    const result = await onSave?.(config);
+    if (result && !result.ok) {
+      setSaveError(result.error ?? "Failed to save configuration");
+      return;
+    }
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
@@ -420,6 +427,13 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
               <div className="flex items-center gap-1.5 text-sm text-emerald-600">
                 <Check className="h-4 w-4" />
                 Configuration saved successfully
+              </div>
+            )}
+
+            {saveError && (
+              <div className="flex items-center gap-1.5 text-sm text-red-600">
+                <AlertCircle className="h-4 w-4" />
+                {saveError}
               </div>
             )}
 

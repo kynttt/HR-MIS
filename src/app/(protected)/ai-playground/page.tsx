@@ -2,16 +2,10 @@ import { Bot, ShieldAlert } from "lucide-react";
 
 import { ChatPlayground } from "@/components/ai/chat-playground";
 import { Badge } from "@/components/ui/badge";
-import type { AIConfiguration } from "@/features/jobs/types";
+import { getAIConfiguration } from "@/features/ai/service";
 
-export default function AIPlaygroundPage() {
-  // TODO: Load from database/storage
-  const config: AIConfiguration = {
-    provider: "openai",
-    apiKey: "",
-    model: "gpt-4o-mini",
-    isEnabled: false,
-  };
+export default async function AIPlaygroundPage() {
+  const config = await getAIConfiguration();
 
   if (!config.isEnabled) {
     return (

@@ -62,13 +62,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
       const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: newMessages,
-          provider: config.provider,
-          apiKey: config.apiKey,
-          model: config.model,
-          ollamaBaseUrl: config.ollamaBaseUrl,
-        }),
+        body: JSON.stringify({ messages: newMessages }),
         signal: abortRef.current.signal,
       });
 
