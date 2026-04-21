@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { setJobOpeningStatusAction } from "@/features/jobs/actions";
-import { rankAllApplicationsForJobAction } from "@/features/applications/actions";
+import { rankAllApplicationsForJobAction } from "@/features/applications/rank-action";
 import type { JobOpeningListItem } from "@/features/jobs/service";
 import { useJobsPage } from "./jobs-page-client";
 
