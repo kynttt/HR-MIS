@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Save, Key, Server, Sparkles, Check, AlertCircle, RefreshCw, AlertTriangle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -79,6 +79,10 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
+  // Use a ref to always read the latest API key without re-creating fetchModels
+  const apiKeyRef = useRef(config.apiKey);
+  apiKeyRef.current = config.apiKey;
+
   // Fetch models when provider or ollama URL changes
   const fetchModels = useCallback(async () => {
     setIsLoadingModels(true);
@@ -90,9 +94,9 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
 
       if (config.provider === "ollama") {
         params.set("baseUrl", config.ollamaBaseUrl || "http://localhost:11434");
-      } else if ((config.provider === "openai" || config.provider === "gemini") && config.apiKey) {
+      } else if ((config.provider === "openai" || config.provider === "gemini") && apiKeyRef.current) {
         // Pass API key to fetch available models from cloud providers
-        params.set("apiKey", config.apiKey);
+        params.set("apiKey", apiKeyRef.current);
       }
 
       const response = await fetch(`/api/ai/models?${params.toString()}`);
@@ -125,20 +129,21 @@ export function AIConfigForm({ initialConfig, onSave }: AIConfigFormProps) {
     } finally {
       setIsLoadingModels(false);
     }
-  }, [config.provider, config.ollamaBaseUrl, config.apiKey]);
+  }, [config.provider, config.ollamaBaseUrl]);
 
-  // Fetch models on initial load and when provider changes
+  // Fetch models on initial load and when provider or ollama URL changes
   useEffect(() => {
     fetchModels();
-  }, [fetchModels, config.provider, config.ollamaBaseUrl, config.apiKey]);
+  }, [fetchModels, config.provider, config.ollamaBaseUrl]);
 
   const handleProviderChange = (provider: AIProvider) => {
     setConfig((prev) => ({
       ...prev,
       provider,
       model: "", // Reset model when changing provider
-      apiKey: provider === "ollama" ? "" : prev.apiKey,
+      apiKey: "", // Clear API key when switching providers (each provider needs its own key)
     }));
+    setAvailableModels([]);
     setFetchError(null);
   };
 
