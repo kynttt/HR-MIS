@@ -30,6 +30,7 @@ export type ApplicationListItem = {
     role_type: "faculty" | "staff";
     department_name: string | null;
   } | null;
+  aiScore?: number;
 };
 
 export type ApplicationDetails = {
@@ -77,7 +78,7 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
 
   let query = supabase
     .from("applications")
-    .select(`id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}`)
+    .select(`id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}, application_ai_scores(score)`)
     .eq("organization_id", organizationId)
     .order("submitted_at", { ascending: false });
 
@@ -118,6 +119,10 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
       department = Array.isArray(rawDepartment) ? rawDepartment[0] ?? null : rawDepartment ?? null;
     }
 
+    const scoreRow = Array.isArray(item.application_ai_scores)
+      ? item.application_ai_scores[0]
+      : item.application_ai_scores;
+
     return {
       id: item.id,
       status: item.status,
@@ -136,7 +141,8 @@ export async function listApplications(filters: ApplicationFilters): Promise<App
             role_type: job.role_type,
             department_name: department?.department_name ?? null
           }
-        : null
+        : null,
+      aiScore: scoreRow ? Math.round(Number(scoreRow.score)) : undefined
     };
   });
 }
@@ -220,7 +226,7 @@ export async function listApplicationsPaginated(
 
   let query = supabase
     .from("applications")
-    .select(`id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}`, { count: "exact" })
+    .select(`id, status, submitted_at, updated_at, ${applicantJoin}, ${jobOpeningsJoin}, application_ai_scores(score)`, { count: "exact" })
     .eq("organization_id", organizationId)
     .order("submitted_at", { ascending: false })
     .range(from, to);
@@ -262,6 +268,10 @@ export async function listApplicationsPaginated(
       department = Array.isArray(rawDepartment) ? rawDepartment[0] ?? null : rawDepartment ?? null;
     }
 
+    const scoreRow = Array.isArray(item.application_ai_scores)
+      ? item.application_ai_scores[0]
+      : item.application_ai_scores;
+
     return {
       id: item.id,
       status: item.status,
@@ -280,7 +290,8 @@ export async function listApplicationsPaginated(
             role_type: job.role_type,
             department_name: department?.department_name ?? null
           }
-        : null
+        : null,
+      aiScore: scoreRow ? Math.round(Number(scoreRow.score)) : undefined
     };
   });
 
