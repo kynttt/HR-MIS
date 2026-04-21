@@ -104,7 +104,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
         if (done) {
           // Flush remaining buffer
           if (buffer.trim()) {
-            const content = parseStreamChunk(buffer, config.provider);
+            const content = parseStreamChunk(buffer);
             if (content) {
               appendAssistantContent(content);
             }
@@ -128,7 +128,7 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
           const trimmed = line.trim();
           if (!trimmed) continue;
 
-          const content = parseStreamChunk(trimmed, config.provider);
+          const content = parseStreamChunk(trimmed);
           if (content) {
             appendAssistantContent(content);
           }
@@ -156,48 +156,27 @@ export function ChatPlayground({ config }: ChatPlaygroundProps) {
     }
   };
 
-  function parseStreamChunk(line: string, provider: string): string | null {
-    if (provider === "openai") {
-      if (!line.startsWith("data: ")) return null;
-      const data = line.slice(6).trim();
-      if (data === "[DONE]") return null;
-      try {
-        const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (typeof delta === "string") {
-          return delta;
-        }
-      } catch {
-        // Invalid JSON chunk
-      }
-      return null;
-    }
+  /**
+   * Parse a unified SSE line from the API.
+   * Format: data: {"delta": "text content"}
+   * All providers (OpenAI, Gemini, Ollama) are normalized to this format.
+   */
+  function parseStreamChunk(line: string): string | null {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data: ")) return null;
 
-    if (provider === "gemini") {
-      try {
-        const parsed = JSON.parse(line);
-        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (typeof text === "string") {
-          return text;
-        }
-      } catch {
-        // Invalid JSON chunk
-      }
-      return null;
-    }
+    const data = trimmed.slice(6).trim();
+    if (data === "[DONE]") return null;
 
-    if (provider === "ollama") {
-      try {
-        const parsed = JSON.parse(line);
-        if (typeof parsed.response === "string") {
-          return parsed.response;
-        }
-      } catch {
-        // Invalid JSON chunk
+    try {
+      const parsed = JSON.parse(data);
+      if (typeof parsed.delta === "string") {
+        return parsed.delta;
       }
-      return null;
+    } catch {
+      // Not valid JSON — might be a plain text SSE line
+      console.warn("[Chat] Failed to parse SSE data:", data.substring(0, 100));
     }
-
     return null;
   }
 
