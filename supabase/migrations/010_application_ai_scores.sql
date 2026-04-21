@@ -32,5 +32,5 @@ create policy "admin_manage_ai_scores"
   using (public.is_admin_user())
   with check (public.is_admin_user());
 
-create index idx_ai_scores_job on public.application_ai_scores(job_opening_id);
-create index idx_ai_scores_org on public.application_ai_scores(organization_id);
+create index if not exists idx_ai_scores_job on public.application_ai_scores(job_opening_id);
+create index if not exists idx_ai_scores_org on public.application_ai_scores(organization_id);
